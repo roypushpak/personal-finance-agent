@@ -78,7 +78,7 @@ BUDGET_CATEGORIES = [
 # Initialize the LLM that will be used for both categorization and the agent.
 # We use the ChatOpenAI class and point it to the OpenRouter API.
 llm = ChatOpenAI(
-    model="deepseek/deepseek-chat", # Using the standard 'model' parameter
+    model="deepseek/deepseek-chat-v3-0324:free", # Corrected model name
     temperature=0,
     openai_api_key=OPENROUTER_API_KEY,
     openai_api_base="https://openrouter.ai/api/v1",
