@@ -1,4 +1,6 @@
-yfinance
 pandas
 Flask
 gunicorn
+plaid-python
+python-dotenv
+google-generativeai

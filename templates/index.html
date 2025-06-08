@@ -3,29 +3,58 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Personal Finance AI Agent</title>
+    <title>Personal Budgeting Agent</title>
     <link
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css"
       rel="stylesheet"
     />
   </head>
   <body>
-    <div class="container">
-      <h1 class="mt-5">Personal Finance AI Agent</h1>
-      <form action="/stock_data" method="post" class="mt-4">
-        <div class="mb-3">
-          <label for="ticker" class="form-label">Enter Stock Ticker</label>
-          <input
-            type="text"
-            class="form-control"
-            id="ticker"
-            name="ticker"
-            required
-          />
-        </div>
-        <button type="submit" class="btn btn-primary">Get Stock Data</button>
-      </form>
+    <div class="container text-center">
+      <h1 class="mt-5">Personal Budgeting Agent</h1>
+      <p class="lead">Connect your bank account to get started.</p>
+      <button id="link-button" class="btn btn-primary btn-lg mt-4">
+        Link Your Bank Account
+      </button>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+    <script type="text/javascript">
+      (async function () {
+        const fetchLinkToken = async () => {
+          const response = await fetch("/api/create_link_token", {
+            method: "POST",
+          });
+          const { link_token } = await response.json();
+          return link_token;
+        };
+
+        const handler = Plaid.create({
+          token: await fetchLinkToken(),
+          onSuccess: async (public_token, metadata) => {
+            await fetch("/api/set_access_token", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ public_token: public_token }),
+            });
+            window.location.href = "/dashboard";
+          },
+          onLoad: () => {},
+          onExit: (err, metadata) => {
+            if (err != null) {
+              console.log(err);
+            }
+          },
+          onEvent: (eventName, metadata) => {},
+        });
+
+        const linkButton = document.getElementById("link-button");
+        linkButton.addEventListener("click", (event) => {
+          handler.open();
+        });
+      })();
+    </script>
   </body>
 </html>

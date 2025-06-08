@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Your Budget Dashboard</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="container">
+      <h1 class="mt-5">Your Transactions</h1>
+      <p class="lead">Here are your transactions from the last 30 days.</p>
+
+      {% if product_not_ready %}
+      <div class="alert alert-info" role="alert">
+        <p>
+          Your transaction data is being prepared. This page will refresh
+          automatically in a few seconds.
+        </p>
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+      </div>
+      <script>
+        setTimeout(() => {
+          window.location.reload();
+        }, 7000);
+      </script>
+      {% endif %} {% if error %}
+      <div class="alert alert-danger" role="alert">
+        <p>Oh no! Something went wrong:</p>
+        <pre>{{ error }}</pre>
+        <a href="/" class="btn btn-primary mt-2">Try Again</a>
+      </div>
+      {% endif %} {% if transactions %}
+      <table class="table table-striped mt-4">
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col">Name</th>
+            <th scope="col">Amount</th>
+            <th scope="col">Category</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in transactions %}
+          <tr>
+            <td>{{ t.date }}</td>
+            <td>{{ t.name }}</td>
+            <td>${{ "%.2f"|format(t.amount) }}</td>
+            <td>{{ t.ai_category }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+
+      <a href="/" class="btn btn-secondary mt-4">Link Another Account</a>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>
