@@ -281,12 +281,14 @@ def overview():
                 'overview.html',
                 product_not_ready=True,
                 expense_chart_data=default_chart_data,
+                income_chart_data=default_chart_data,
                 total_income=0
             )
         return render_template(
             'overview.html',
             error=error,
             expense_chart_data=default_chart_data,
+            income_chart_data=default_chart_data,
             total_income=0
         )
     
@@ -301,11 +303,13 @@ def overview():
         }
 
     expense_chart_data = get_chart_data(outgoing)
+    income_chart_data = get_chart_data(incoming)
     total_income = sum(t['amount'] for t in incoming) if incoming else 0
 
     return render_template(
         'overview.html',
         expense_chart_data=expense_chart_data,
+        income_chart_data=income_chart_data,
         total_income=total_income
     )
 
