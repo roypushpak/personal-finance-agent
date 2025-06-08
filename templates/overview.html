@@ -1,0 +1,69 @@
+{% extends "base.html" %} {% block title %}Budget Overview{% endblock %} {%
+block head_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %} {% block content %}
+<h1 class="mt-5">Your Budget Overview</h1>
+<p class="lead">A 30-day summary of your income and expenses.</p>
+
+<div class="row mt-4">
+  <div class="col-md-6">
+    <h2 class="text-center">Expenses by Category</h2>
+    <canvas id="expenseChart"></canvas>
+  </div>
+  <div class="col-md-6">
+    <h2 class="text-center">Total Income</h2>
+    <div class="card text-center bg-light">
+      <div class="card-body">
+        <h1 class="display-4 fw-bold text-success">
+          ${{ "%.2f"|format(total_income) }}
+        </h1>
+        <p class="card-text text-muted">Total income over the last 30 days.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if product_not_ready %}
+<div class="alert alert-info mt-4" role="alert">
+  <p>
+    Your transaction data is being prepared. This page will refresh
+    automatically in a few seconds.
+  </p>
+  <div class="spinner-border text-primary" role="status">
+    <span class="visually-hidden">Loading...</span>
+  </div>
+</div>
+<script>
+  setTimeout(() => {
+    window.location.reload();
+  }, 7000);
+</script>
+{% endif %} {% if error %}
+<div class="alert alert-danger mt-4" role="alert">
+  <p>Oh no! Something went wrong:</p>
+  <pre>{{ error | tojson }}</pre>
+  <a href="/" class="btn btn-primary mt-2">Try Again</a>
+</div>
+{% endif %} {% endblock %} {% block body_scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Expense Chart
+    const expenseLabels = {{ expense_chart_data.labels | tojson }};
+    const expenseValues = {{ expense_chart_data.data | tojson }};
+    if (expenseLabels.length > 0) {
+      new Chart(document.getElementById('expenseChart'), {
+        type: 'pie',
+        data: {
+          labels: expenseLabels,
+          datasets: [{
+            data: expenseValues,
+            backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']
+          }]
+        }
+      });
+    }
+
+    // No need for an income chart anymore
+  });
+</script>
+{% endblock %}

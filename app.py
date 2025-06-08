@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for
 import plaid
 from plaid.api import plaid_api
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
@@ -13,6 +13,10 @@ from dotenv import load_dotenv
 import datetime
 import json
 import google.generativeai as genai
+import pandas as pd
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
+import re
+import time
 
 load_dotenv()
 
@@ -33,6 +37,15 @@ if not GEMINI_API_KEY:
     print("Please add your Gemini API key to the .env file.")
     exit()
 
+# Define the cache file path
+CACHE_FILE = 'transactions_cache.json'
+
+# --- Ensure cache is cleared on startup for this testing phase ---
+if os.path.exists(CACHE_FILE):
+    os.remove(CACHE_FILE)
+    print("INFO: Cleared existing transaction cache to force re-categorization.")
+# ----------------------------------------------------------------
+
 # Plaid client setup
 host = plaid.Environment.Sandbox # or Development or Production
 configuration = plaid.Configuration(
@@ -51,32 +64,89 @@ model = genai.GenerativeModel('gemini-1.5-flash')
 access_token = None
 item_id = None
 
+CACHE_FILE = 'transactions_cache.json'
+
 BUDGET_CATEGORIES = [
     "Groceries", "Restaurants", "Shopping", "Transportation", "Bills & Utilities",
-    "Entertainment", "Health & Wellness", "Income", "Housing", "Taxes",
-    "Gifts & Donations", "Investments", "Travel", "Personal Care", "General Merchandise"
+    "Entertainment", "Health & Wellness", "Housing", "Taxes",
+    "Gifts & Donations", "Investments", "Travel", "Personal Care"
 ]
 
+def json_date_serializer(obj):
+    """JSON serializer for objects not serializable by default json code"""
+    if isinstance(obj, (datetime.date, datetime.datetime)):
+        return obj.isoformat()
+    raise TypeError ("Type %s not serializable" % type(obj))
+
 def categorize_transaction(transaction_name):
-    try:
-        prompt = f"""
-        Categorize the following transaction into one of these categories:
-        {', '.join(BUDGET_CATEGORIES)}.
-        Return only the category name.
-        Transaction: "{transaction_name}"
-        Category:
-        """
-        response = model.generate_content(prompt)
-        category = response.text.strip()
-        if category in BUDGET_CATEGORIES:
-            return category
-        return "General Merchandise"
-    except Exception as e:
-        print(f"Could not categorize '{transaction_name}': {e}")
-        return "Uncategorized"
+    """
+    Categorizes a transaction using the AI model, with a retry mechanism.
+    """
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+
+    for attempt in range(2):
+        print(f"Categorizing '{transaction_name}' (Attempt {attempt + 1})")
+        
+        # Use a stricter prompt on the second attempt
+        if attempt == 1:
+            prompt = f"""
+            STRICT MODE: Classify the transaction into one of these categories:
+            {', '.join(BUDGET_CATEGORIES)}.
+            Respond with ONLY the single, most appropriate category name from the list.
+            Transaction: "{transaction_name}"
+            Category:
+            """
+        else:
+            prompt = f"""
+            Analyze the following transaction and classify it into one of these categories:
+            {', '.join(BUDGET_CATEGORIES)}.
+            Respond with ONLY the single category name and nothing else.
+            Transaction: "{transaction_name}"
+            Category:
+            """
+        
+        try:
+            response = model.generate_content(prompt, safety_settings=safety_settings)
+            cleaned_response = response.text.strip().lower()
+            
+            found_categories = []
+            for cat in BUDGET_CATEGORIES:
+                if re.search(r'\b' + re.escape(cat.lower()) + r'\b', cleaned_response):
+                    found_categories.append(cat)
+            
+            if len(found_categories) == 1:
+                print(f"  -> Successfully categorized '{transaction_name}' as '{found_categories[0]}'")
+                return found_categories[0]
+            else:
+                print(f"  -> Attempt {attempt + 1} failed. Found {len(found_categories)} matches.")
+
+        except Exception as e:
+            print(f"  -> ERROR on attempt {attempt + 1}: {e}")
+            
+            # Check for rate limit error and extract retry delay
+            error_str = str(e)
+            retry_after_match = re.search(r'retry_delay {\s*seconds: (\d+)\s*}', error_str)
+            
+            wait_time = 2 # Default wait time if no specific delay is found
+            if retry_after_match:
+                wait_time = int(retry_after_match.group(1)) + 1 # Add a 1s buffer
+                print(f"  -> Rate limit hit. Waiting for {wait_time} seconds before retrying.")
+
+            # Wait before retrying
+            time.sleep(wait_time)
+
+    print(f"WARN: All attempts failed for '{transaction_name}'. Defaulting to 'Shopping'.")
+    return "Shopping"
 
 @app.route('/')
 def index():
+    if access_token:
+        return redirect(url_for('expenses'))
     return render_template('index.html')
 
 @app.route('/api/create_link_token', methods=['POST'])
@@ -107,14 +177,29 @@ def set_access_token():
         exchange_response = client.item_public_token_exchange(exchange_request)
         access_token = exchange_response['access_token']
         item_id = exchange_response['item_id']
-        return jsonify({'status': 'success'})
+        # Clear cache when linking a new account
+        if os.path.exists(CACHE_FILE):
+            os.remove(CACHE_FILE)
+        return jsonify({'status': 'success', 'redirect_url': url_for('expenses')})
     except plaid.ApiException as e:
         return jsonify(json.loads(e.body))
 
-@app.route('/dashboard')
-def dashboard():
+def get_processed_transactions():
+    """
+    Helper function to fetch and process transactions from Plaid.
+    It uses a local cache to avoid re-fetching and re-categorizing.
+    """
+    # 1. Try to load from cache
+    if os.path.exists(CACHE_FILE):
+        print("Loading transactions from cache.")
+        with open(CACHE_FILE, 'r') as f:
+            cached_data = json.load(f)
+        return cached_data['incoming'], cached_data['outgoing'], None
+
+    # 2. If cache doesn't exist, fetch from Plaid
+    print("Cache not found. Fetching new transactions from Plaid.")
     if not access_token:
-        return render_template('index.html', error="Please link an account first.")
+        return None, None, {"error_code": "NO_ACCESS_TOKEN"}
 
     try:
         start_date = datetime.date.today() - datetime.timedelta(days=30)
@@ -127,20 +212,98 @@ def dashboard():
         )
         response = client.transactions_get(request)
         
-        categorized_transactions = []
+        print(f"Fetched {len(response['transactions'])} transactions. Now categorizing expenses with AI...")
+        incoming_transactions = []
+        outgoing_transactions = []
         for t in response['transactions']:
-            # Plaid's transaction object is not directly modifiable, so we create a dict
             transaction_data = t.to_dict()
-            transaction_data['ai_category'] = categorize_transaction(t.name)
-            categorized_transactions.append(transaction_data)
+            if transaction_data['amount'] > 0:
+                transaction_data['ai_category'] = categorize_transaction(t.name)
+                outgoing_transactions.append(transaction_data)
+            else:
+                transaction_data['amount'] = abs(transaction_data['amount'])
+                transaction_data['ai_category'] = 'Income'
+                incoming_transactions.append(transaction_data)
+        
+        # 3. Save the newly processed data to cache
+        print("Saving categorized transactions to cache.")
+        with open(CACHE_FILE, 'w') as f:
+            json.dump({
+                'incoming': incoming_transactions,
+                'outgoing': outgoing_transactions
+            }, f, indent=2, default=json_date_serializer)
 
-        return render_template('dashboard.html', transactions=categorized_transactions)
+        return incoming_transactions, outgoing_transactions, None
     except plaid.ApiException as e:
-        error_data = json.loads(e.body)
-        if error_data.get('error_code') == 'PRODUCT_NOT_READY':
-            return render_template('dashboard.html', product_not_ready=True)
-        else:
-            return render_template('dashboard.html', error=error_data)
+        return None, None, json.loads(e.body)
+
+@app.route('/overview')
+def overview():
+    if not access_token:
+        return redirect(url_for('index'))
+
+    default_chart_data = {"labels": [], "data": []}
+    incoming, outgoing, error = get_processed_transactions()
+
+    if error:
+        if error.get('error_code') == 'PRODUCT_NOT_READY':
+            return render_template(
+                'overview.html',
+                product_not_ready=True,
+                expense_chart_data=default_chart_data,
+                total_income=0
+            )
+        return render_template(
+            'overview.html',
+            error=error,
+            expense_chart_data=default_chart_data,
+            total_income=0
+        )
+    
+    def get_chart_data(transactions):
+        if not transactions:
+            return {"labels": [], "data": []}
+        df = pd.DataFrame(transactions)
+        category_totals = df.groupby('ai_category')['amount'].sum().sort_values(ascending=False)
+        return {
+            "labels": category_totals.index.tolist(),
+            "data": category_totals.values.tolist()
+        }
+
+    expense_chart_data = get_chart_data(outgoing)
+    total_income = sum(t['amount'] for t in incoming) if incoming else 0
+
+    return render_template(
+        'overview.html',
+        expense_chart_data=expense_chart_data,
+        total_income=total_income
+    )
+
+@app.route('/expenses')
+def expenses():
+    if not access_token:
+        return redirect(url_for('index'))
+    
+    _, outgoing, error = get_processed_transactions()
+
+    if error:
+        # If product not ready, redirect to overview which handles the loading state
+        return redirect(url_for('overview'))
+
+    return render_template('expenses.html', outgoing=outgoing)
+
+@app.route('/income')
+def income():
+    if not access_token:
+        return redirect(url_for('index'))
+    
+    incoming, _, error = get_processed_transactions()
+
+    if error:
+        return redirect(url_for('overview'))
+
+    return render_template('income.html', incoming=incoming)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Use a different port to avoid conflicts
+    app.run(debug=True, port=5002)

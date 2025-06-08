@@ -1,0 +1,32 @@
+{% extends "base.html" %} {% block title %}Income History{% endblock %} {% block
+content %}
+<h1 class="mt-5">Income History</h1>
+<p class="lead">Your income from the last 90 days.</p>
+
+{% if incoming %}
+<table class="table table-striped mt-4">
+  <thead>
+    <tr>
+      <th scope="col">Date</th>
+      <th scope="col">Name</th>
+      <th scope="col">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in incoming %}
+    <tr>
+      <td>{{ t.date }}</td>
+      <td>{{ t.name }}</td>
+      <td>${{ "%.2f"|format(t.amount) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="alert alert-info mt-4" role="alert">
+  You do not have any incoming transactions in the last 90 days.
+</div>
+{% endif %}
+
+<a href="/" class="btn btn-secondary mt-4 mb-5">Link Another Account</a>
+{% endblock %}

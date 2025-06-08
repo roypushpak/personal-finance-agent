@@ -32,14 +32,21 @@
         const handler = Plaid.create({
           token: await fetchLinkToken(),
           onSuccess: async (public_token, metadata) => {
-            await fetch("/api/set_access_token", {
+            const response = await fetch("/api/set_access_token", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ public_token: public_token }),
             });
-            window.location.href = "/dashboard";
+            const data = await response.json();
+            if (data.redirect_url) {
+              window.location.href = data.redirect_url;
+            } else {
+              console.error(
+                "Error setting access token, no redirect URL received."
+              );
+            }
           },
           onLoad: () => {},
           onExit: (err, metadata) => {
