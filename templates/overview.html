@@ -5,6 +5,34 @@ block head_scripts %}
 <h1 class="mt-5">Your Budget Overview</h1>
 <p class="lead">A 30-day summary of your incoming and outgoing transactions.</p>
 
+{% if overall_summary %}
+<div class="card mt-4">
+  <div class="card-body">
+    <h5 class="card-title">Overall Spending Progress</h5>
+    <div class="d-flex justify-content-between">
+      <span>${{ "%.2f"|format(overall_summary.spent) }}</span>
+      <span class="text-muted"
+        >${{ "%.2f"|format(overall_summary.limit) }}</span
+      >
+    </div>
+    <div class="progress" style="height: 25px">
+      {% set progress_color = 'bg-success' if overall_summary.percentage <= 75
+      else 'bg-warning' if overall_summary.percentage <= 100 else 'bg-danger' %}
+      <div
+        class="progress-bar {{ progress_color }}"
+        role="progressbar"
+        style="width: {{ overall_summary.percentage }}%;"
+        aria-valuenow="{{ overall_summary.percentage }}"
+        aria-valuemin="0"
+        aria-valuemax="100"
+      >
+        <strong>{{ "%.0f"|format(overall_summary.percentage) }}%</strong>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div class="row mt-4">
   <div class="col-md-6">
     <h2 class="text-center">Outgoing by Category</h2>

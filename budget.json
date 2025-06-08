@@ -1,0 +1,18 @@
+{
+  "overall_limit": 2000,
+  "category_budgets": {
+    "Groceries": null,
+    "Restaurants": null,
+    "Shopping": null,
+    "Transportation": null,
+    "Bills & Utilities": null,
+    "Entertainment": null,
+    "Health & Wellness": null,
+    "Housing": null,
+    "Taxes": null,
+    "Gifts & Donations": null,
+    "Travel": null,
+    "Personal Care": null,
+    "Savings & Transfers": null
+  }
+}

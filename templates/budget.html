@@ -1,0 +1,123 @@
+{% extends "base.html" %} {% block title %}Set Your Budget{% endblock %} {%
+block content %}
+<div class="container mt-5">
+  <h1>Set Your Budget</h1>
+  <p class="lead">
+    Define your monthly spending limit and category-specific budgets.
+  </p>
+
+  <div id="save-notification" class="alert alert-success d-none" role="alert">
+    Budget saved successfully!
+  </div>
+
+  <form id="budget-form">
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Overall Monthly Spending Limit</h5>
+        <div class="input-group">
+          <span class="input-group-text">$</span>
+          <input
+            type="number"
+            class="form-control"
+            id="overall_limit"
+            name="overall_limit"
+            placeholder="e.g., 2000"
+            min="0"
+            step="100"
+          />
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title">Category Budgets</h5>
+        <p class="card-text text-muted">
+          Set a budget for specific categories. Leave blank for no limit.
+        </p>
+        <div id="category-budgets-container">
+          <!-- Categories will be loaded here by JavaScript -->
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary mt-4">Save Budget</button>
+  </form>
+</div>
+{% endblock %} {% block body_scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", async function () {
+    const budgetForm = document.getElementById("budget-form");
+    const overallLimitInput = document.getElementById("overall_limit");
+    const categoriesContainer = document.getElementById(
+      "category-budgets-container"
+    );
+    const notification = document.getElementById("save-notification");
+
+    // Fetch existing budget and categories to populate the form
+    async function loadBudget() {
+      try {
+        const response = await fetch("/api/budget");
+        const data = await response.json();
+
+        overallLimitInput.value = data.budget.overall_limit || "";
+
+        categoriesContainer.innerHTML = ""; // Clear previous entries
+        data.categories.forEach((category) => {
+          const budgetValue = data.budget.category_budgets
+            ? data.budget.category_budgets[category] || ""
+            : "";
+          const group = document.createElement("div");
+          group.classList.add("input-group", "mb-3");
+          group.innerHTML = `
+          <span class="input-group-text" style="width: 180px;">${category}</span>
+          <span class="input-group-text">$</span>
+          <input type="number" class="form-control" name="category_${category}" value="${budgetValue}" min="0" step="10">
+        `;
+          categoriesContainer.appendChild(group);
+        });
+      } catch (error) {
+        console.error("Error loading budget:", error);
+        categoriesContainer.innerHTML =
+          '<p class="text-danger">Could not load budget data.</p>';
+      }
+    }
+
+    // Handle form submission
+    budgetForm.addEventListener("submit", async function (e) {
+      e.preventDefault();
+
+      const formData = new FormData(budgetForm);
+      const budgetData = {
+        overall_limit: parseFloat(formData.get("overall_limit")) || null,
+        category_budgets: {},
+      };
+
+      for (const [key, value] of formData.entries()) {
+        if (key.startsWith("category_")) {
+          const categoryName = key.replace("category_", "");
+          budgetData.category_budgets[categoryName] = parseFloat(value) || null;
+        }
+      }
+
+      try {
+        const response = await fetch("/api/budget", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(budgetData),
+        });
+        if (!response.ok) throw new Error("Failed to save budget");
+
+        // Show success notification
+        notification.classList.remove("d-none");
+        setTimeout(() => notification.classList.add("d-none"), 3000);
+      } catch (error) {
+        console.error("Error saving budget:", error);
+        alert("There was an error saving your budget.");
+      }
+    });
+
+    loadBudget();
+  });
+</script>
+{% endblock %}

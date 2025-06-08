@@ -1,6 +1,39 @@
 {% extends "base.html" %} {% block title %}Outgoing Transactions{% endblock %}
 {% block content %}
 <h1 class="mt-5">Outgoing Transactions</h1>
+
+{% if spending_summary %}
+<div class="card mt-4">
+  <div class="card-body">
+    <h5 class="card-title">Budget Status</h5>
+    {% for category, summary in spending_summary.items() %}
+    <div class="mb-3">
+      <strong>{{ category }}</strong>
+      <div class="d-flex justify-content-between">
+        <span>${{ "%.2f"|format(summary.spent) }}</span>
+        <span class="text-muted">${{ "%.2f"|format(summary.budget) }}</span>
+      </div>
+      <div class="progress" style="height: 20px">
+        {% set progress_color = 'bg-success' if summary.percentage <= 75 else
+        'bg-warning' if summary.percentage <= 100 else 'bg-danger' %}
+        <div
+          class="progress-bar {{ progress_color }}"
+          role="progressbar"
+          style="width: {{ summary.percentage }}%;"
+          aria-valuenow="{{ summary.percentage }}"
+          aria-valuemin="0"
+          aria-valuemax="100"
+        >
+          {{ "%.0f"|format(summary.percentage) }}%
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<h2 class="mt-5">Transaction History</h2>
 <p class="lead">Your outgoing transactions from the last 30 days.</p>
 
 {% if outgoing %}

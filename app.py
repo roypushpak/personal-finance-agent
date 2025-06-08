@@ -89,6 +89,21 @@ llm = ChatOpenAI(
     max_retries=3, # Add some resilience
 )
 
+# --- Constants ---
+BUDGET_FILE = 'budget.json'
+
+def get_budget():
+    """Loads the budget from a JSON file."""
+    if not os.path.exists(BUDGET_FILE):
+        return {"overall_limit": None, "category_budgets": {}}
+    with open(BUDGET_FILE, 'r') as f:
+        return json.load(f)
+
+def save_budget(budget_data):
+    """Saves the budget to a JSON file."""
+    with open(BUDGET_FILE, 'w') as f:
+        json.dump(budget_data, f, indent=2)
+
 def json_date_serializer(obj):
     """JSON serializer for objects not serializable by default json code"""
     if isinstance(obj, (datetime.date, datetime.datetime)):
@@ -299,12 +314,26 @@ def overview():
     expense_chart_data = get_chart_data(outgoing)
     income_chart_data = get_chart_data(incoming)
     total_income = sum(t['amount'] for t in incoming) if incoming else 0
+    
+    # Calculate overall budget summary
+    budget = get_budget()
+    overall_limit = budget.get('overall_limit')
+    total_spent = sum(t['amount'] for t in outgoing) if outgoing else 0
+    
+    overall_summary = None
+    if overall_limit:
+        overall_summary = {
+            "spent": total_spent,
+            "limit": overall_limit,
+            "remaining": overall_limit - total_spent,
+            "percentage": (total_spent / overall_limit) * 100 if overall_limit > 0 else 0
+        }
 
     return render_template(
         'overview.html',
         expense_chart_data=expense_chart_data,
         income_chart_data=income_chart_data,
-        total_income=total_income
+        overall_summary=overall_summary
     )
 
 @app.route('/outgoing')
@@ -313,12 +342,34 @@ def outgoing():
         return redirect(url_for('index'))
     
     _, outgoing_transactions, error = get_processed_transactions()
-
     if error:
-        # If product not ready, redirect to overview which handles the loading state
         return redirect(url_for('overview'))
+    
+    # Process budget data
+    budget = get_budget()
+    category_budgets = budget.get('category_budgets', {})
+    
+    # Calculate spending per category
+    spending_summary = {}
+    if outgoing_transactions:
+        df = pd.DataFrame(outgoing_transactions)
+        category_spending = df.groupby('ai_category')['amount'].sum().to_dict()
 
-    return render_template('expenses.html', outgoing=outgoing_transactions)
+        for category, budget_amount in category_budgets.items():
+            if budget_amount: # Only include categories with a set budget
+                spent = category_spending.get(category, 0)
+                spending_summary[category] = {
+                    "spent": spent,
+                    "budget": budget_amount,
+                    "remaining": budget_amount - spent,
+                    "percentage": (spent / budget_amount) * 100 if budget_amount > 0 else 0
+                }
+
+    return render_template(
+        'expenses.html', 
+        outgoing=outgoing_transactions,
+        spending_summary=spending_summary
+    )
 
 @app.route('/incoming')
 def incoming():
@@ -337,6 +388,26 @@ def agent():
     if not access_token:
         return redirect(url_for('index'))
     return render_template('agent.html')
+
+@app.route('/budget', methods=['GET'])
+def budget():
+    if not access_token:
+        return redirect(url_for('index'))
+    return render_template('budget.html')
+
+@app.route('/api/budget', methods=['GET', 'POST'])
+def api_budget():
+    if not access_token:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    if request.method == 'POST':
+        new_budget = request.json
+        save_budget(new_budget)
+        return jsonify({"status": "success", "budget": new_budget})
+    
+    # GET request
+    budget_data = get_budget()
+    return jsonify({"budget": budget_data, "categories": BUDGET_CATEGORIES})
 
 @app.route('/api/ask_agent', methods=['POST'])
 def ask_agent():
