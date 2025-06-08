@@ -3,4 +3,9 @@ Flask
 gunicorn
 plaid-python
 python-dotenv
-google-generativeai
+langchain
+langchain-community
+langchain-openai
+pydantic
+pydantic-core
+tabulate

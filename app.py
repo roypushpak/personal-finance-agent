@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 import plaid
 from plaid.api import plaid_api
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
@@ -12,11 +12,16 @@ import os
 from dotenv import load_dotenv
 import datetime
 import json
-import google.generativeai as genai
 import pandas as pd
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import re
 import time
+
+# --- LangChain Imports ---
+from langchain_openai import ChatOpenAI
+from langchain.agents import tool, AgentExecutor, create_react_agent
+from langchain import hub # To get pre-built prompts
+from langchain.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
 load_dotenv()
 
@@ -25,16 +30,16 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
 
 PLAID_CLIENT_ID = os.getenv('PLAID_CLIENT_ID')
 PLAID_SECRET = os.getenv('PLAID_SECRET')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 
 if not PLAID_CLIENT_ID or not PLAID_SECRET:
     print("ERROR: PLAID_CLIENT_ID and PLAID_SECRET environment variables must be set.")
     print("Please create a .env file with your Plaid credentials.")
     exit()
 
-if not GEMINI_API_KEY:
-    print("ERROR: GEMINI_API_KEY environment variable must be set.")
-    print("Please add your Gemini API key to the .env file.")
+if not OPENROUTER_API_KEY:
+    print("ERROR: OPENROUTER_API_KEY environment variable must be set.")
+    print("Please get a key from https://openrouter.ai/keys and add it to your .env file.")
     exit()
 
 # Define the cache file path
@@ -58,9 +63,6 @@ configuration = plaid.Configuration(
 api_client = plaid.ApiClient(configuration)
 client = plaid_api.PlaidApi(api_client)
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
-
 access_token = None
 item_id = None
 
@@ -72,6 +74,21 @@ BUDGET_CATEGORIES = [
     "Gifts & Donations", "Travel", "Personal Care", "Savings & Transfers"
 ]
 
+# --- Shared LLM ---
+# Initialize the LLM that will be used for both categorization and the agent.
+# We use the ChatOpenAI class and point it to the OpenRouter API.
+llm = ChatOpenAI(
+    model="deepseek/deepseek-chat", # Using the standard 'model' parameter
+    temperature=0,
+    openai_api_key=OPENROUTER_API_KEY,
+    openai_api_base="https://openrouter.ai/api/v1",
+    default_headers={
+        "HTTP-Referer": "http://localhost:5003",
+        "X-Title": "Personal Finance Agent"
+    },
+    max_retries=3, # Add some resilience
+)
+
 def json_date_serializer(obj):
     """JSON serializer for objects not serializable by default json code"""
     if isinstance(obj, (datetime.date, datetime.datetime)):
@@ -80,68 +97,45 @@ def json_date_serializer(obj):
 
 def categorize_transaction(transaction_name):
     """
-    Categorizes a transaction using the AI model, with a retry mechanism.
+    Categorizes a transaction using the new OpenRouter LLM.
     """
-    safety_settings = {
-        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-    }
+    print(f"Categorizing '{transaction_name}' with Deepseek...")
+    
+    categorization_prompt_template = """
+    Analyze the following transaction and classify it into one of these categories: {categories}.
+    Respond with ONLY the single category name and nothing else.
+    Transaction: "{transaction}"
+    Category:
+    """
+    
+    prompt = PromptTemplate(
+        template=categorization_prompt_template,
+        input_variables=["transaction", "categories"],
+    )
 
-    for attempt in range(2):
-        print(f"Categorizing '{transaction_name}' (Attempt {attempt + 1})")
+    # Create a simple chain for categorization
+    categorization_chain = prompt | llm | StrOutputParser()
+    
+    try:
+        response = categorization_chain.invoke({
+            "transaction": transaction_name,
+            "categories": ", ".join(BUDGET_CATEGORIES)
+        })
         
-        # Use a stricter prompt on the second attempt
-        if attempt == 1:
-            prompt = f"""
-            STRICT MODE: Classify the transaction into one of these categories:
-            {', '.join(BUDGET_CATEGORIES)}.
-            Respond with ONLY the single, most appropriate category name from the list.
-            Transaction: "{transaction_name}"
-            Category:
-            """
-        else:
-            prompt = f"""
-            Analyze the following transaction and classify it into one of these categories:
-            {', '.join(BUDGET_CATEGORIES)}.
-            Respond with ONLY the single category name and nothing else.
-            Transaction: "{transaction_name}"
-            Category:
-            """
+        cleaned_response = response.strip()
         
-        try:
-            response = model.generate_content(prompt, safety_settings=safety_settings)
-            cleaned_response = response.text.strip().lower()
-            
-            found_categories = []
-            for cat in BUDGET_CATEGORIES:
-                if re.search(r'\b' + re.escape(cat.lower()) + r'\b', cleaned_response):
-                    found_categories.append(cat)
-            
-            if len(found_categories) == 1:
-                print(f"  -> Successfully categorized '{transaction_name}' as '{found_categories[0]}'")
-                return found_categories[0]
-            else:
-                print(f"  -> Attempt {attempt + 1} failed. Found {len(found_categories)} matches.")
+        # Find the best match, being a bit more flexible.
+        for cat in BUDGET_CATEGORIES:
+            if cat.lower() in cleaned_response.lower():
+                print(f"  -> Successfully categorized '{transaction_name}' as '{cat}'")
+                return cat
 
-        except Exception as e:
-            print(f"  -> ERROR on attempt {attempt + 1}: {e}")
-            
-            # Check for rate limit error and extract retry delay
-            error_str = str(e)
-            retry_after_match = re.search(r'retry_delay {\s*seconds: (\d+)\s*}', error_str)
-            
-            wait_time = 2 # Default wait time if no specific delay is found
-            if retry_after_match:
-                wait_time = int(retry_after_match.group(1)) + 1 # Add a 1s buffer
-                print(f"  -> Rate limit hit. Waiting for {wait_time} seconds before retrying.")
+        print(f"WARN: Could not find a matching category for response: '{cleaned_response}'. Defaulting.")
+        return "Shopping" # Default category
 
-            # Wait before retrying
-            time.sleep(wait_time)
-
-    print(f"WARN: All attempts failed for '{transaction_name}'. Defaulting to 'Shopping'.")
-    return "Shopping"
+    except Exception as e:
+        print(f"  -> ERROR during categorization: {e}")
+        return "Shopping" # Default on error
 
 @app.route('/')
 def index():
@@ -338,6 +332,78 @@ def incoming():
 
     return render_template('income.html', incoming=incoming_transactions)
 
+@app.route('/agent')
+def agent():
+    if not access_token:
+        return redirect(url_for('index'))
+    return render_template('agent.html')
+
+@app.route('/api/ask_agent', methods=['POST'])
+def ask_agent():
+    print("\n[AGENT] /api/ask_agent endpoint hit.")
+    if not access_token:
+        print("[AGENT] ERROR: Not authenticated.")
+        return jsonify({"error": "Not authenticated"}), 401
+
+    user_question = request.json.get('question')
+    if not user_question:
+        print("[AGENT] ERROR: No question provided.")
+        return jsonify({"error": "No question provided"}), 400
+    
+    print(f"[AGENT] User question: {user_question}")
+
+    try:
+        # --- LangChain Agent Implementation ---
+        
+        # 2. Define the tools the agent can use
+        # We wrap our existing function in a 'tool' decorator
+        @tool
+        def get_transaction_data() -> str:
+            """
+            Returns the user's recent transaction data as two markdown-formatted tables (incoming and outgoing).
+            Call this tool whenever the user asks a question about their spending, income, or any financial activity.
+            """
+            print("[AGENT TOOL] get_transaction_data() called.")
+            incoming, outgoing, error = get_processed_transactions()
+            if error:
+                return "Error: Could not retrieve transactions."
+
+            inc_df = pd.DataFrame(incoming)
+            out_df = pd.DataFrame(outgoing)
+            inc_md = "No incoming transactions."
+            out_md = "No outgoing transactions."
+
+            if not inc_df.empty:
+                inc_md = inc_df[['date', 'name', 'amount', 'ai_category']].rename(columns={'ai_category': 'category'}).to_markdown(index=False)
+            
+            if not out_df.empty:
+                out_md = out_df[['date', 'name', 'amount', 'ai_category']].rename(columns={'ai_category': 'category'}).to_markdown(index=False)
+
+            return f"INCOMING TRANSACTIONS:\n{inc_md}\n\nOUTGOING TRANSACTIONS:\n{out_md}"
+
+        tools = [get_transaction_data]
+
+        # 3. Get the prompt template
+        # This prompt tells the agent how to reason and what tools are available.
+        prompt = hub.pull("hwchase17/react")
+        
+        # 4. Create the agent
+        agent = create_react_agent(llm, tools, prompt)
+
+        # 5. Create the agent executor
+        # This is the runtime that invokes the agent and executes the tools.
+        # verbose=True shows the agent's "chain of thought" in the terminal.
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+        # 6. Invoke the agent and get the response
+        response = agent_executor.invoke({"input": user_question})
+        
+        return jsonify({'answer': response['output']})
+
+    except Exception as e:
+        print(f"[AGENT] ERROR: Unhandled exception during LangChain agent execution: {e}")
+        return jsonify({"error": "Failed to get response from AI"}), 500
+
 if __name__ == '__main__':
     # Use a different port to avoid conflicts
-    app.run(debug=True, port=5002)
+    app.run(debug=True, port=5003)

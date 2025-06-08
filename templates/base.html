@@ -50,6 +50,13 @@
                 >Incoming</a
               >
             </li>
+            <li class="nav-item">
+              <a
+                class="nav-link {% if request.path == url_for('agent') %}active{% endif %}"
+                href="{{ url_for('agent') }}"
+                >AI Agent</a
+              >
+            </li>
           </ul>
         </div>
       </div>
