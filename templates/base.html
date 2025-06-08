@@ -13,7 +13,7 @@
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
       <div class="container-fluid">
-        <a class="navbar-brand" href="{{ url_for('expenses') }}"
+        <a class="navbar-brand" href="{{ url_for('overview') }}"
           >Budget Agent</a
         >
         <button
@@ -38,16 +38,16 @@
             </li>
             <li class="nav-item">
               <a
-                class="nav-link {% if request.path == url_for('expenses') %}active{% endif %}"
-                href="{{ url_for('expenses') }}"
-                >Expenses</a
+                class="nav-link {% if request.path == url_for('outgoing') %}active{% endif %}"
+                href="{{ url_for('outgoing') }}"
+                >Outgoing</a
               >
             </li>
             <li class="nav-item">
               <a
-                class="nav-link {% if request.path == url_for('income') %}active{% endif %}"
-                href="{{ url_for('income') }}"
-                >Income</a
+                class="nav-link {% if request.path == url_for('incoming') %}active{% endif %}"
+                href="{{ url_for('incoming') }}"
+                >Incoming</a
               >
             </li>
           </ul>

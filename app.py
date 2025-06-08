@@ -69,7 +69,7 @@ CACHE_FILE = 'transactions_cache.json'
 BUDGET_CATEGORIES = [
     "Groceries", "Restaurants", "Shopping", "Transportation", "Bills & Utilities",
     "Entertainment", "Health & Wellness", "Housing", "Taxes",
-    "Gifts & Donations", "Investments", "Travel", "Personal Care"
+    "Gifts & Donations", "Travel", "Personal Care", "Savings & Transfers"
 ]
 
 def json_date_serializer(obj):
@@ -146,7 +146,7 @@ def categorize_transaction(transaction_name):
 @app.route('/')
 def index():
     if access_token:
-        return redirect(url_for('expenses'))
+        return redirect(url_for('outgoing'))
     return render_template('index.html')
 
 @app.route('/api/create_link_token', methods=['POST'])
@@ -180,7 +180,7 @@ def set_access_token():
         # Clear cache when linking a new account
         if os.path.exists(CACHE_FILE):
             os.remove(CACHE_FILE)
-        return jsonify({'status': 'success', 'redirect_url': url_for('expenses')})
+        return jsonify({'status': 'success', 'redirect_url': url_for('outgoing')})
     except plaid.ApiException as e:
         return jsonify(json.loads(e.body))
 
@@ -215,15 +215,45 @@ def get_processed_transactions():
         print(f"Fetched {len(response['transactions'])} transactions. Now categorizing expenses with AI...")
         incoming_transactions = []
         outgoing_transactions = []
+
+        # Keywords to identify income transactions by name. Case-insensitive.
+        INCOME_KEYWORDS = ['gusto', 'ach electronic credit', 'direct deposit', 'payroll']
+        SAVINGS_KEYWORDS = ['cd deposit']
+        INTEREST_KEYWORDS = ['intrst pymnt', 'interest']
+
         for t in response['transactions']:
             transaction_data = t.to_dict()
-            if transaction_data['amount'] > 0:
-                transaction_data['ai_category'] = categorize_transaction(t.name)
-                outgoing_transactions.append(transaction_data)
-            else:
-                transaction_data['amount'] = abs(transaction_data['amount'])
+            transaction_name_lower = t.name.lower()
+
+            # Rule 1: Check for explicit income keywords first. This is the most reliable signal.
+            if any(keyword in transaction_name_lower for keyword in INCOME_KEYWORDS):
+                transaction_data['amount'] = abs(transaction_data['amount']) # Ensure amount is positive for display
                 transaction_data['ai_category'] = 'Income'
                 incoming_transactions.append(transaction_data)
+            
+            # Rule 2: If not income, check if it's another form of credit (refund).
+            # Plaid uses negative amounts for credits.
+            elif transaction_data['amount'] < 0:
+                transaction_data['amount'] = abs(transaction_data['amount'])
+                
+                # Check if it's interest
+                if any(keyword in transaction_name_lower for keyword in INTEREST_KEYWORDS):
+                    transaction_data['ai_category'] = 'Interest'
+                # Otherwise, it's a refund
+                else:
+                    transaction_data['ai_category'] = 'Refund'
+                
+                incoming_transactions.append(transaction_data)
+
+            # Rule 3: Check for explicit savings keywords.
+            elif any(keyword in transaction_name_lower for keyword in SAVINGS_KEYWORDS):
+                transaction_data['ai_category'] = 'Savings & Transfers'
+                outgoing_transactions.append(transaction_data)
+
+            # Rule 4: If it's not income or a refund, it must be an expense.
+            else:
+                transaction_data['ai_category'] = categorize_transaction(t.name)
+                outgoing_transactions.append(transaction_data)
         
         # 3. Save the newly processed data to cache
         print("Saving categorized transactions to cache.")
@@ -279,30 +309,30 @@ def overview():
         total_income=total_income
     )
 
-@app.route('/expenses')
-def expenses():
+@app.route('/outgoing')
+def outgoing():
     if not access_token:
         return redirect(url_for('index'))
     
-    _, outgoing, error = get_processed_transactions()
+    _, outgoing_transactions, error = get_processed_transactions()
 
     if error:
         # If product not ready, redirect to overview which handles the loading state
         return redirect(url_for('overview'))
 
-    return render_template('expenses.html', outgoing=outgoing)
+    return render_template('expenses.html', outgoing=outgoing_transactions)
 
-@app.route('/income')
-def income():
+@app.route('/incoming')
+def incoming():
     if not access_token:
         return redirect(url_for('index'))
     
-    incoming, _, error = get_processed_transactions()
+    incoming_transactions, _, error = get_processed_transactions()
 
     if error:
         return redirect(url_for('overview'))
 
-    return render_template('income.html', incoming=incoming)
+    return render_template('income.html', incoming=incoming_transactions)
 
 if __name__ == '__main__':
     # Use a different port to avoid conflicts
