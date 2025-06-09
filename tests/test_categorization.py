@@ -1,15 +1,25 @@
 import pytest
+from unittest.mock import patch
+
+from langchain_core.runnables import RunnableLambda
 from services.transaction_service import batch_categorize_transactions
 
 
-def test_batch_categorization():
-    """
-    Tests that the batch categorization function returns a valid mapping.
-    """
+@patch("services.transaction_service.get_llm")
+def test_batch_categorization(mock_get_llm):
+    """Tests that the batch categorization function returns a valid mapping."""
     transactions = ["Coffee Shop", "Amazon Purchase", "Monthly Subscription"]
 
-    # This is a mocked test. In a real scenario, you'd mock the LLM call.
-    # For this hackathon, we'll just check the output format.
+    # Return a fake LLM that outputs predictable JSON
+    fake_response = (
+        "["
+        "{\"id\": 1, \"category\": \"Restaurants\"},"
+        "{\"id\": 2, \"category\": \"Shopping\"},"
+        "{\"id\": 3, \"category\": \"Bills & Utilities\"}"
+        "]"
+    )
+    mock_get_llm.return_value = RunnableLambda(lambda _: fake_response)
+
     category_map = batch_categorize_transactions(transactions)
 
     assert isinstance(category_map, dict)
