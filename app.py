@@ -110,88 +110,64 @@ def json_date_serializer(obj):
         return obj.isoformat()
     raise TypeError ("Type %s not serializable" % type(obj))
 
-def categorize_transaction(transaction_name):
+def batch_categorize_transactions(transactions_to_categorize: list) -> dict:
     """
-    Categorizes a transaction using the new OpenRouter LLM.
+    Categorizes a batch of transactions using a single API call.
     """
-    print(f"Categorizing '{transaction_name}' with Deepseek...")
-    
+    if not transactions_to_categorize:
+        return {}
+
+    print(f"Batch categorizing {len(transactions_to_categorize)} transactions with Deepseek...")
+
+    # Create a numbered list of transactions for the prompt
+    transaction_list_str = "\n".join([f"{i+1}. {name}" for i, name in enumerate(transactions_to_categorize)])
+
     categorization_prompt_template = """
-    Analyze the following transaction and classify it into one of these categories: {categories}.
-    Respond with ONLY the single category name and nothing else.
-    Transaction: "{transaction}"
-    Category:
+    You are an expert financial assistant. Analyze the following list of bank transactions.
+    For each transaction, classify it into one of these categories: {categories}.
+
+    Return your response as a valid JSON array where each object contains the 'id' of the transaction from the list and its 'category'.
+    For example: `[
+      {{"id": 1, "category": "Shopping"}},
+      {{"id": 2, "category": "Restaurants"}}
+    ]`
+
+    Here is the list of transactions:
+    {transactions}
     """
     
     prompt = PromptTemplate(
         template=categorization_prompt_template,
-        input_variables=["transaction", "categories"],
+        input_variables=["transactions", "categories"],
     )
 
-    # Create a simple chain for categorization
     categorization_chain = prompt | llm | StrOutputParser()
     
     try:
-        response = categorization_chain.invoke({
-            "transaction": transaction_name,
+        response_str = categorization_chain.invoke({
+            "transactions": transaction_list_str,
             "categories": ", ".join(BUDGET_CATEGORIES)
         })
         
-        cleaned_response = response.strip()
-        
-        # Find the best match, being a bit more flexible.
-        for cat in BUDGET_CATEGORIES:
-            if cat.lower() in cleaned_response.lower():
-                print(f"  -> Successfully categorized '{transaction_name}' as '{cat}'")
-                return cat
+        # Clean the response to ensure it's valid JSON
+        json_response_str = re.search(r'\[.*\]', response_str, re.DOTALL).group(0)
+        categorized_results = json.loads(json_response_str)
 
-        print(f"WARN: Could not find a matching category for response: '{cleaned_response}'. Defaulting.")
-        return "Shopping" # Default category
+        # Create a mapping from transaction name back to its category
+        # The original index is used to link back to the original transaction name.
+        category_map = {}
+        for result in categorized_results:
+            original_index = result['id'] - 1
+            transaction_name = transactions_to_categorize[original_index]
+            category_map[transaction_name] = result['category']
+
+        print("Batch categorization successful.")
+        return category_map
 
     except Exception as e:
-        print(f"  -> ERROR during categorization: {e}")
-        return "Shopping" # Default on error
-
-@app.route('/')
-def index():
-    if access_token:
-        return redirect(url_for('outgoing'))
-    return render_template('index.html')
-
-@app.route('/api/create_link_token', methods=['POST'])
-def create_link_token():
-    try:
-        request = LinkTokenCreateRequest(
-            user=LinkTokenCreateRequestUser(
-                client_user_id= 'user-id'
-            ),
-            client_name="Personal Finance Agent",
-            products=[Products('transactions')],
-            country_codes=[CountryCode('CA')],
-            language='en'
-        )
-        response = client.link_token_create(request)
-        return jsonify(response.to_dict())
-    except plaid.ApiException as e:
-        return jsonify(json.loads(e.body))
-
-@app.route('/api/set_access_token', methods=['POST'])
-def set_access_token():
-    global access_token, item_id
-    public_token = request.json['public_token']
-    try:
-        exchange_request = ItemPublicTokenExchangeRequest(
-            public_token=public_token
-        )
-        exchange_response = client.item_public_token_exchange(exchange_request)
-        access_token = exchange_response['access_token']
-        item_id = exchange_response['item_id']
-        # Clear cache when linking a new account
-        if os.path.exists(CACHE_FILE):
-            os.remove(CACHE_FILE)
-        return jsonify({'status': 'success', 'redirect_url': url_for('outgoing')})
-    except plaid.ApiException as e:
-        return jsonify(json.loads(e.body))
+        print(f"  -> ERROR during batch categorization: {e}")
+        # On error, fallback to a default for all
+        return {name: "Shopping" for name in transactions_to_categorize}
 
 def get_processed_transactions():
     """
@@ -224,6 +200,7 @@ def get_processed_transactions():
         print(f"Fetched {len(response['transactions'])} transactions. Now categorizing expenses with AI...")
         incoming_transactions = []
         outgoing_transactions = []
+        transactions_to_categorize = []
 
         # Keywords to identify income transactions by name. Case-insensitive.
         INCOME_KEYWORDS = ['gusto', 'ach electronic credit', 'direct deposit', 'payroll']
@@ -261,8 +238,23 @@ def get_processed_transactions():
 
             # Rule 4: If it's not income or a refund, it must be an expense.
             else:
-                transaction_data['ai_category'] = categorize_transaction(t.name)
-                outgoing_transactions.append(transaction_data)
+                # This is a standard outgoing transaction that needs categorization.
+                transactions_to_categorize.append(transaction_data)
+
+        # --- Batch Categorization Step ---
+        if transactions_to_categorize:
+            # Get a list of just the names for the batch call
+            names_to_categorize = [t['name'] for t in transactions_to_categorize]
+            
+            # Make a single API call to categorize all of them
+            category_map = batch_categorize_transactions(names_to_categorize)
+            
+            # Apply the results back to our transactions
+            for t in transactions_to_categorize:
+                t['ai_category'] = category_map.get(t['name'], 'Shopping') # Default to shopping if not found
+
+        # Combine the categorized transactions with the others
+        outgoing_transactions.extend(transactions_to_categorize)
         
         # 3. Save the newly processed data to cache
         print("Saving categorized transactions to cache.")
@@ -474,6 +466,43 @@ def ask_agent():
     except Exception as e:
         print(f"[AGENT] ERROR: Unhandled exception during LangChain agent execution: {e}")
         return jsonify({"error": "Failed to get response from AI"}), 500
+
+@app.route('/')
+def index():
+    # If we have an access token, go to the main dashboard. Otherwise, show the Plaid Link page.
+    if access_token:
+        return redirect(url_for('overview'))
+    return render_template('index.html')
+
+@app.route('/api/create_link_token', methods=['POST'])
+def create_link_token():
+    try:
+        request = LinkTokenCreateRequest(
+            user=LinkTokenCreateRequestUser(client_user_id='user-id'),
+            client_name="Personal Finance Agent",
+            products=[Products('transactions')],
+            country_codes=[CountryCode('CA')],
+            language='en'
+        )
+        response = client.link_token_create(request)
+        return jsonify(response.to_dict())
+    except plaid.ApiException as e:
+        return jsonify(json.loads(e.body))
+
+@app.route('/api/set_access_token', methods=['POST'])
+def set_access_token():
+    global access_token, item_id
+    public_token = request.json['public_token']
+    try:
+        exchange_request = ItemPublicTokenExchangeRequest(public_token=public_token)
+        exchange_response = client.item_public_token_exchange(exchange_request)
+        access_token = exchange_response['access_token']
+        item_id = exchange_response['item_id']
+        if os.path.exists(CACHE_FILE):
+            os.remove(CACHE_FILE)
+        return jsonify({'status': 'success', 'redirect_url': url_for('overview')})
+    except plaid.ApiException as e:
+        return jsonify(json.loads(e.body))
 
 if __name__ == '__main__':
     # Use a different port to avoid conflicts
