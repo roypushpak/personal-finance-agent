@@ -1,16 +1,16 @@
-import os
 import json
+import os
+
 import pandas as pd
 from dotenv import load_dotenv
-
-from langchain_openai import ChatOpenAI
-from langchain.agents import tool, AgentExecutor, create_react_agent
+from langchain.agents import AgentExecutor, create_react_agent, tool
 from langchain.prompts import PromptTemplate
+from langchain_community.callbacks.manager import get_openai_callback
 from pydantic import BaseModel, Field
-from langchain.callbacks import OpenAICallback
 
-from services.transaction_service import get_processed_transactions
 from services.budget_service import get_budget, save_budget
+from services.llm_service import get_llm
+from services.transaction_service import get_processed_transactions
 
 load_dotenv()
 
@@ -29,23 +29,6 @@ def save_memory(memory):
     """Saves the conversation history to a JSON file."""
     with open(MEMORY_FILE, "w") as f:
         json.dump(memory, f, indent=2)
-
-
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-if not OPENROUTER_API_KEY:
-    raise ValueError("OPENROUTER_API_KEY environment variable must be set.")
-
-llm = ChatOpenAI(
-    model="deepseek/deepseek-chat-v3-0324:free",
-    temperature=0,
-    openai_api_key=OPENROUTER_API_KEY,
-    openai_api_base="https://openrouter.ai/api/v1",
-    default_headers={
-        "HTTP-Referer": "http://localhost:5003",
-        "X-Title": "Personal Finance Agent",
-    },
-    max_retries=3,
-)
 
 
 def create_agent_executor(access_token):
@@ -113,6 +96,7 @@ def create_agent_executor(access_token):
         Tool to provide budget advice. Use this tool when the user asks for advice on their budget,
         asks how to save money, or asks for a plan to meet their financial goals.
         """
+        llm = get_llm()
         _, outgoing, _ = get_processed_transactions(access_token)
         budget = get_budget()
 
@@ -164,6 +148,7 @@ def create_agent_executor(access_token):
     )
 
     tools = [get_transaction_data, BudgetAdvisor]
+    llm = get_llm()
     agent = create_react_agent(llm, tools, prompt)
     agent_executor = AgentExecutor(
         agent=agent, tools=tools, verbose=True, handle_parsing_errors=True
@@ -180,7 +165,7 @@ def ask_agent(agent_executor, user_query):
     )
 
     try:
-        with OpenAICallback() as cb:
+        with get_openai_callback() as cb:
             # Initial response from the agent
             initial_response = agent_executor.invoke(
                 {"input": user_query, "history": conversation_history}
@@ -196,6 +181,7 @@ def ask_agent(agent_executor, user_query):
             """
 
             # Get the revised answer from the LLM
+            llm = get_llm()
             critique_response = llm.invoke(critique_prompt)
             final_response = critique_response.content
 

@@ -5,17 +5,13 @@ from dotenv import load_dotenv
 import datetime
 import hashlib
 
-from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
+from services.llm_service import get_llm
 from services.plaid_service import get_transactions
 
 load_dotenv()
-
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-if not OPENROUTER_API_KEY:
-    raise ValueError("OPENROUTER_API_KEY environment variable must be set.")
 
 CACHE_FILE = "transactions_cache.json"
 BUDGET_CATEGORIES = [
@@ -33,18 +29,6 @@ BUDGET_CATEGORIES = [
     "Personal Care",
     "Savings & Transfers",
 ]
-
-llm = ChatOpenAI(
-    model="deepseek/deepseek-chat-v3-0324:free",
-    temperature=0,
-    openai_api_key=OPENROUTER_API_KEY,
-    openai_api_base="https://openrouter.ai/api/v1",
-    default_headers={
-        "HTTP-Referer": "http://localhost:5003",
-        "X-Title": "Personal Finance Agent",
-    },
-    max_retries=3,
-)
 
 
 def batch_categorize_transactions(transactions_to_categorize: list) -> dict:
@@ -81,6 +65,7 @@ def batch_categorize_transactions(transactions_to_categorize: list) -> dict:
         input_variables=["transactions", "categories"],
     )
 
+    llm = get_llm()
     categorization_chain = prompt | llm | StrOutputParser()
 
     try:
