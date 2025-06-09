@@ -14,21 +14,24 @@ from services.budget_service import get_budget, save_budget
 
 load_dotenv()
 
-MEMORY_FILE = 'agent_memory.json'
+MEMORY_FILE = "agent_memory.json"
+
 
 def load_memory():
     """Loads the conversation history from a JSON file."""
     if not os.path.exists(MEMORY_FILE):
         return []
-    with open(MEMORY_FILE, 'r') as f:
+    with open(MEMORY_FILE, "r") as f:
         return json.load(f)
+
 
 def save_memory(memory):
     """Saves the conversation history to a JSON file."""
-    with open(MEMORY_FILE, 'w') as f:
+    with open(MEMORY_FILE, "w") as f:
         json.dump(memory, f, indent=2)
 
-OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 if not OPENROUTER_API_KEY:
     raise ValueError("OPENROUTER_API_KEY environment variable must be set.")
 
@@ -39,10 +42,11 @@ llm = ChatOpenAI(
     openai_api_base="https://openrouter.ai/api/v1",
     default_headers={
         "HTTP-Referer": "http://localhost:5003",
-        "X-Title": "Personal Finance Agent"
+        "X-Title": "Personal Finance Agent",
     },
     max_retries=3,
 )
+
 
 def create_agent_executor(access_token):
     class GetTransactionDataInput(BaseModel):
@@ -64,38 +68,44 @@ def create_agent_executor(access_token):
         # Combine into a single pandas DataFrame for analysis
         df_incoming = pd.DataFrame(incoming)
         df_outgoing = pd.DataFrame(outgoing)
-        
+
         # Convert date columns to datetime objects
         if not df_incoming.empty:
-            df_incoming['date'] = pd.to_datetime(df_incoming['date'])
+            df_incoming["date"] = pd.to_datetime(df_incoming["date"])
         if not df_outgoing.empty:
-            df_outgoing['date'] = pd.to_datetime(df_outgoing['date'])
+            df_outgoing["date"] = pd.to_datetime(df_outgoing["date"])
 
         # Get high-level summaries
-        total_income = df_incoming['amount'].abs().sum()
-        total_spending = df_outgoing['amount'].sum()
+        total_income = df_incoming["amount"].abs().sum()
+        total_spending = df_outgoing["amount"].sum()
         net_flow = total_income - total_spending
-        
+
         # Spending by category
         spending_by_category = {}
         if not df_outgoing.empty:
-            spending_by_category = df_outgoing.groupby('category')['amount'].sum().to_dict()
+            spending_by_category = (
+                df_outgoing.groupby("category")["amount"].sum().to_dict()
+            )
 
         summary = {
             "total_income": total_income,
             "total_spending": total_spending,
             "net_cash_flow": net_flow,
-            "spending_by_category": {k: round(v, 2) for k, v in spending_by_category.items()},
+            "spending_by_category": {
+                k: round(v, 2) for k, v in spending_by_category.items()
+            },
             "budget": budget,
             "transactions_count": {
                 "income": len(df_incoming),
-                "outgoing": len(df_outgoing)
-            }
+                "outgoing": len(df_outgoing),
+            },
         }
         return json.dumps(summary, indent=2)
 
     class BudgetAdvisorInput(BaseModel):
-        query: str = Field(description="The user's question about their budget or financial goals.")
+        query: str = Field(
+            description="The user's question about their budget or financial goals."
+        )
 
     @tool(args_schema=BudgetAdvisorInput)
     def BudgetAdvisor(query: str) -> str:
@@ -105,9 +115,9 @@ def create_agent_executor(access_token):
         """
         _, outgoing, _ = get_processed_transactions(access_token)
         budget = get_budget()
-        
+
         df_outgoing = pd.DataFrame(outgoing)
-        spending_by_category = df_outgoing.groupby('category')['amount'].sum().to_dict()
+        spending_by_category = df_outgoing.groupby("category")["amount"].sum().to_dict()
 
         advice_prompt = f"""
         The user wants advice on their budget. Here is their spending by category:
@@ -120,7 +130,7 @@ def create_agent_executor(access_token):
 
         Provide advice on how they can meet their budget and suggest areas where they could cut back.
         """
-        
+
         response = llm.invoke(advice_prompt)
         return response.content
 
@@ -155,23 +165,27 @@ def create_agent_executor(access_token):
 
     tools = [get_transaction_data, BudgetAdvisor]
     agent = create_react_agent(llm, tools, prompt)
-    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
+    agent_executor = AgentExecutor(
+        agent=agent, tools=tools, verbose=True, handle_parsing_errors=True
+    )
     return agent_executor
+
 
 def ask_agent(agent_executor, user_query):
     """Invokes the agent with a user query and self-critiques the response."""
     # Load conversation history
     memory = load_memory()
-    conversation_history = "\n".join([f"Q: {item['query']}\nA: {item['response']}" for item in memory])
+    conversation_history = "\n".join(
+        [f"Q: {item['query']}\nA: {item['response']}" for item in memory]
+    )
 
     try:
         with OpenAICallback() as cb:
             # Initial response from the agent
-            initial_response = agent_executor.invoke({
-                "input": user_query,
-                "history": conversation_history
-            })
-            
+            initial_response = agent_executor.invoke(
+                {"input": user_query, "history": conversation_history}
+            )
+
             # Self-critique prompt
             critique_prompt = f"""
             Original query: {user_query}
@@ -180,11 +194,11 @@ def ask_agent(agent_executor, user_query):
             Critique this answer. Is it helpful? Is it accurate? Is it actionable?
             Rewrite the answer to be more helpful, empathetic, and clear.
             """
-            
+
             # Get the revised answer from the LLM
             critique_response = llm.invoke(critique_prompt)
             final_response = critique_response.content
-            
+
             # Save the interaction to memory
             memory.append({"query": user_query, "response": final_response})
             # Keep memory to the last 5 interactions
@@ -198,4 +212,4 @@ def ask_agent(agent_executor, user_query):
 
     except Exception as e:
         print(f"Error invoking agent: {e}")
-        return "Sorry, I encountered an error. Please try again.", None 
+        return "Sorry, I encountered an error. Please try again.", None

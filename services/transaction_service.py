@@ -13,15 +13,25 @@ from services.plaid_service import get_transactions
 
 load_dotenv()
 
-OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 if not OPENROUTER_API_KEY:
     raise ValueError("OPENROUTER_API_KEY environment variable must be set.")
 
-CACHE_FILE = 'transactions_cache.json'
+CACHE_FILE = "transactions_cache.json"
 BUDGET_CATEGORIES = [
-    "Groceries", "Restaurants", "Shopping", "Transportation", "Bills & Utilities",
-    "Entertainment", "Health & Wellness", "Housing", "Taxes",
-    "Gifts & Donations", "Travel", "Personal Care", "Savings & Transfers"
+    "Groceries",
+    "Restaurants",
+    "Shopping",
+    "Transportation",
+    "Bills & Utilities",
+    "Entertainment",
+    "Health & Wellness",
+    "Housing",
+    "Taxes",
+    "Gifts & Donations",
+    "Travel",
+    "Personal Care",
+    "Savings & Transfers",
 ]
 
 llm = ChatOpenAI(
@@ -31,10 +41,11 @@ llm = ChatOpenAI(
     openai_api_base="https://openrouter.ai/api/v1",
     default_headers={
         "HTTP-Referer": "http://localhost:5003",
-        "X-Title": "Personal Finance Agent"
+        "X-Title": "Personal Finance Agent",
     },
     max_retries=3,
 )
+
 
 def batch_categorize_transactions(transactions_to_categorize: list) -> dict:
     """
@@ -43,9 +54,13 @@ def batch_categorize_transactions(transactions_to_categorize: list) -> dict:
     if not transactions_to_categorize:
         return {}
 
-    print(f"Batch categorizing {len(transactions_to_categorize)} transactions with Deepseek...")
+    print(
+        f"Batch categorizing {len(transactions_to_categorize)} transactions with Deepseek..."
+    )
 
-    transaction_list_str = "\n".join([f"{i+1}. {name}" for i, name in enumerate(transactions_to_categorize)])
+    transaction_list_str = "\n".join(
+        [f"{i+1}. {name}" for i, name in enumerate(transactions_to_categorize)]
+    )
 
     categorization_prompt_template = """
     You are an expert financial assistant. Analyze the following list of bank transactions.
@@ -60,28 +75,30 @@ def batch_categorize_transactions(transactions_to_categorize: list) -> dict:
     Here is the list of transactions:
     {transactions}
     """
-    
+
     prompt = PromptTemplate(
         template=categorization_prompt_template,
         input_variables=["transactions", "categories"],
     )
 
     categorization_chain = prompt | llm | StrOutputParser()
-    
+
     try:
-        response_str = categorization_chain.invoke({
-            "transactions": transaction_list_str,
-            "categories": ", ".join(BUDGET_CATEGORIES)
-        })
-        
-        json_response_str = re.search(r'\[.*\]', response_str, re.DOTALL).group(0)
+        response_str = categorization_chain.invoke(
+            {
+                "transactions": transaction_list_str,
+                "categories": ", ".join(BUDGET_CATEGORIES),
+            }
+        )
+
+        json_response_str = re.search(r"\[.*\]", response_str, re.DOTALL).group(0)
         categorized_results = json.loads(json_response_str)
 
         category_map = {}
         for result in categorized_results:
-            original_index = result['id'] - 1
+            original_index = result["id"] - 1
             transaction_name = transactions_to_categorize[original_index]
-            category_map[transaction_name] = result['category']
+            category_map[transaction_name] = result["category"]
 
         print("Batch categorization successful.")
         return category_map
@@ -90,9 +107,11 @@ def batch_categorize_transactions(transactions_to_categorize: list) -> dict:
         print(f"  -> ERROR during batch categorization: {e}")
         return {name: "Shopping" for name in transactions_to_categorize}
 
+
 def mask_pii(data_string):
     """Hashes a string to mask PII."""
     return hashlib.sha256(data_string.encode()).hexdigest()
+
 
 def get_processed_transactions(access_token):
     """
@@ -101,9 +120,9 @@ def get_processed_transactions(access_token):
     """
     if os.path.exists(CACHE_FILE):
         print("Loading transactions from cache.")
-        with open(CACHE_FILE, 'r') as f:
+        with open(CACHE_FILE, "r") as f:
             cached_data = json.load(f)
-        return cached_data['incoming'], cached_data['outgoing'], None
+        return cached_data["incoming"], cached_data["outgoing"], None
 
     if not access_token:
         return None, None, {"error_code": "NO_ACCESS_TOKEN"}
@@ -111,49 +130,63 @@ def get_processed_transactions(access_token):
     try:
         start_date = datetime.date.today() - datetime.timedelta(days=30)
         end_date = datetime.date.today()
-        
+
         transactions = get_transactions(access_token, start_date, end_date)
-        
-        print(f"Fetched {len(transactions)} transactions. Now categorizing expenses with AI...")
+
+        print(
+            f"Fetched {len(transactions)} transactions. Now categorizing expenses with AI..."
+        )
         incoming_transactions = []
         outgoing_transactions = []
-        
-        transactions_to_categorize = [t['name'] for t in transactions if t['amount'] > 0]
+
+        transactions_to_categorize = [
+            t["name"] for t in transactions if t["amount"] > 0
+        ]
         category_map = batch_categorize_transactions(transactions_to_categorize)
-        
+
         for t in transactions:
-            transaction_date = t['date']
+            transaction_date = t["date"]
             if isinstance(transaction_date, str):
-                transaction_date = datetime.datetime.strptime(transaction_date, '%Y-%m-%d').date()
+                transaction_date = datetime.datetime.strptime(
+                    transaction_date, "%Y-%m-%d"
+                ).date()
 
             transaction_data = {
                 "date": transaction_date.isoformat(),
-                "name": mask_pii(t['name']),
-                "amount": t['amount'],
+                "name": mask_pii(t["name"]),
+                "amount": t["amount"],
             }
 
-            if t['amount'] > 0:
-                transaction_data['category'] = category_map.get(t['name'], 'Uncategorized')
+            if t["amount"] > 0:
+                transaction_data["category"] = category_map.get(
+                    t["name"], "Uncategorized"
+                )
                 outgoing_transactions.append(transaction_data)
             else:
-                transaction_data['category'] = "Income"
+                transaction_data["category"] = "Income"
                 incoming_transactions.append(transaction_data)
 
         # Cache the results
-        with open(CACHE_FILE, 'w') as f:
-            json.dump({
-                'incoming': incoming_transactions,
-                'outgoing': outgoing_transactions
-            }, f, indent=2)
+        with open(CACHE_FILE, "w") as f:
+            json.dump(
+                {"incoming": incoming_transactions, "outgoing": outgoing_transactions},
+                f,
+                indent=2,
+            )
 
         return incoming_transactions, outgoing_transactions, None
 
     except Exception as e:
         print(f"Error fetching or processing transactions: {e}")
-        return None, None, {"error_code": "TRANSACTION_PROCESSING_ERROR", "message": str(e)}
+        return (
+            None,
+            None,
+            {"error_code": "TRANSACTION_PROCESSING_ERROR", "message": str(e)},
+        )
+
 
 def json_date_serializer(obj):
     """JSON serializer for objects not serializable by default json code"""
     if isinstance(obj, (datetime.date, datetime.datetime)):
         return obj.isoformat()
-    raise TypeError ("Type %s not serializable" % type(obj)) 
+    raise TypeError("Type %s not serializable" % type(obj))
