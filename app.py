@@ -1,4 +1,4 @@
-from flask import Flask, session, redirect, url_for
+from flask import Flask
 import os
 from dotenv import load_dotenv
 from extensions import limiter
@@ -38,11 +38,12 @@ app.register_blueprint(api_bp, url_prefix="/api")
 
 # --- Clear transaction cache on startup (for development) ---
 CACHE_FILE = "transactions_cache.json"
-        if os.path.exists(CACHE_FILE):
-            os.remove(CACHE_FILE)
+if os.path.exists(CACHE_FILE):
+    os.remove(CACHE_FILE)
     print("INFO: Cleared existing transaction cache for a fresh start.")
 
 
 # --- Main execution ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5003)), debug=True)
+    
