@@ -37,7 +37,7 @@ def create_link_token(client_user_id):
         user=LinkTokenCreateRequestUser(client_user_id=client_user_id),
         client_name="Personal Finance Agent",
         products=[Products("transactions")],
-        country_codes=[CountryCode("US")],
+        country_codes=[CountryCode("CA")],
         language="en",
     )
     response = client.link_token_create(request)

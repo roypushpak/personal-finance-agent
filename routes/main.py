@@ -20,7 +20,12 @@ def overview():
     incoming, outgoing, error = get_processed_transactions(access_token)
 
     if error:
-        return render_template('overview.html', error=error)
+        return render_template('overview.html', 
+                               error=error,
+                               chart_data={"labels": [], "data": []},
+                               total_income=0,
+                               total_outgoing=0,
+                               transactions=[])
 
     df_outgoing = pd.DataFrame(outgoing)
     spending_by_category = {}
@@ -56,8 +61,8 @@ def incoming():
         return redirect(url_for('main.index'))
     incoming_transactions, _, error = get_processed_transactions(session['access_token'])
     if error:
-        return render_template('incoming.html', transactions=[], error=error)
-    return render_template('incoming.html', transactions=incoming_transactions)
+        return render_template('income.html', transactions=[], error=error)
+    return render_template('income.html', transactions=incoming_transactions)
 
 @main_bp.route('/agent')
 def agent():
