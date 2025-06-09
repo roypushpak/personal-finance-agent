@@ -3,6 +3,7 @@ import json
 import re
 from dotenv import load_dotenv
 import datetime
+import hashlib
 
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
@@ -89,6 +90,10 @@ def batch_categorize_transactions(transactions_to_categorize: list) -> dict:
         print(f"  -> ERROR during batch categorization: {e}")
         return {name: "Shopping" for name in transactions_to_categorize}
 
+def mask_pii(data_string):
+    """Hashes a string to mask PII."""
+    return hashlib.sha256(data_string.encode()).hexdigest()
+
 def get_processed_transactions(access_token):
     """
     Helper function to fetch and process transactions from Plaid.
@@ -123,15 +128,15 @@ def get_processed_transactions(access_token):
 
             transaction_data = {
                 "date": transaction_date.isoformat(),
-                "name": t['name'],
+                "name": mask_pii(t['name']),
                 "amount": t['amount'],
-                "category": "Income" 
             }
 
             if t['amount'] > 0:
                 transaction_data['category'] = category_map.get(t['name'], 'Uncategorized')
                 outgoing_transactions.append(transaction_data)
             else:
+                transaction_data['category'] = "Income"
                 incoming_transactions.append(transaction_data)
 
         # Cache the results

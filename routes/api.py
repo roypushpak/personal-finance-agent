@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, session
 from services.plaid_service import create_link_token as create_plaid_link_token, exchange_public_token
 from services.budget_service import get_budget, save_budget
 from agent.agent import create_agent_executor, ask_agent as run_agent
+from extensions import limiter
 
 api_bp = Blueprint('api', __name__)
 
@@ -37,6 +38,7 @@ def set_access_token():
         return jsonify({"error": str(e)}), 500
 
 @api_bp.route('/ask_agent', methods=['POST'])
+@limiter.limit("30 per minute")
 def ask_agent():
     user_query = request.json.get('query')
     if not user_query:
@@ -46,8 +48,9 @@ def ask_agent():
     if not agent_executor:
         return jsonify({"error": "Agent not initialized. Please link your bank account."}), 400
 
-    response = run_agent(agent_executor, user_query)
-    return jsonify({"response": response})
+    response, cost_info = run_agent(agent_executor, user_query)
+    
+    return jsonify({"response": response, "cost": cost_info})
 
 @api_bp.route('/budget', methods=['GET', 'POST'])
 def api_budget():

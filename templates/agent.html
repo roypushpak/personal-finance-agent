@@ -129,7 +129,7 @@ content %}
         }
 
         const data = await response.json();
-        appendMessage("AI", data.response, "agent-message");
+        appendMessage("AI", data.response, "agent-message", false, data.cost);
       } catch (error) {
         thinkingIndicator.remove();
         appendMessage(
@@ -141,7 +141,13 @@ content %}
       }
     });
 
-    function appendMessage(sender, text, type, isThinking = false) {
+    function appendMessage(
+      sender,
+      text,
+      type,
+      isThinking = false,
+      cost = null
+    ) {
       const messageDiv = document.createElement("div");
       messageDiv.classList.add("message", type);
 
@@ -158,7 +164,11 @@ content %}
       } else {
         // Render Markdown for agent messages
         if (type === "agent-message") {
-          contentDiv.innerHTML = marked.parse(text);
+          let html = marked.parse(text);
+          if (cost) {
+            html += `<div class="text-muted small mt-2">Cost: ${cost.total_cost} (${cost.total_tokens} tokens)</div>`;
+          }
+          contentDiv.innerHTML = html;
         } else {
           contentDiv.textContent = text;
         }

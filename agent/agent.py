@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain.agents import tool, AgentExecutor, create_react_agent
 from langchain.prompts import PromptTemplate
+from pydantic import BaseModel, Field
+from langchain_community.callbacks import OpenAICallback
 
 from services.transaction_service import get_processed_transactions
 from services.budget_service import get_budget, save_budget
@@ -43,7 +45,10 @@ llm = ChatOpenAI(
 )
 
 def create_agent_executor(access_token):
-    @tool
+    class GetTransactionDataInput(BaseModel):
+        pass
+
+    @tool(args_schema=GetTransactionDataInput)
     def get_transaction_data() -> str:
         """
         Tool to get the user's recent financial transactions and budget.
@@ -89,12 +94,14 @@ def create_agent_executor(access_token):
         }
         return json.dumps(summary, indent=2)
 
-    @tool
+    class BudgetAdvisorInput(BaseModel):
+        query: str = Field(description="The user's question about their budget or financial goals.")
+
+    @tool(args_schema=BudgetAdvisorInput)
     def BudgetAdvisor(query: str) -> str:
         """
         Tool to provide budget advice. Use this tool when the user asks for advice on their budget,
         asks how to save money, or asks for a plan to meet their financial goals.
-        The query should be the user's question.
         """
         _, outgoing, _ = get_processed_transactions(access_token)
         budget = get_budget()
@@ -158,32 +165,37 @@ def ask_agent(agent_executor, user_query):
     conversation_history = "\n".join([f"Q: {item['query']}\nA: {item['response']}" for item in memory])
 
     try:
-        # Initial response from the agent
-        initial_response = agent_executor.invoke({
-            "input": user_query,
-            "history": conversation_history
-        })
-        
-        # Self-critique prompt
-        critique_prompt = f"""
-        Original query: {user_query}
-        Initial answer: {initial_response['output']}
+        with OpenAICallback() as cb:
+            # Initial response from the agent
+            initial_response = agent_executor.invoke({
+                "input": user_query,
+                "history": conversation_history
+            })
+            
+            # Self-critique prompt
+            critique_prompt = f"""
+            Original query: {user_query}
+            Initial answer: {initial_response['output']}
 
-        Critique this answer. Is it helpful? Is it accurate? Is it actionable?
-        Rewrite the answer to be more helpful, empathetic, and clear.
-        """
-        
-        # Get the revised answer from the LLM
-        critique_response = llm.invoke(critique_prompt)
-        final_response = critique_response.content
-        
-        # Save the interaction to memory
-        memory.append({"query": user_query, "response": final_response})
-        # Keep memory to the last 5 interactions
-        save_memory(memory[-5:])
+            Critique this answer. Is it helpful? Is it accurate? Is it actionable?
+            Rewrite the answer to be more helpful, empathetic, and clear.
+            """
+            
+            # Get the revised answer from the LLM
+            critique_response = llm.invoke(critique_prompt)
+            final_response = critique_response.content
+            
+            # Save the interaction to memory
+            memory.append({"query": user_query, "response": final_response})
+            # Keep memory to the last 5 interactions
+            save_memory(memory[-5:])
 
-        return final_response
+            cost_info = {
+                "total_tokens": cb.total_tokens,
+                "total_cost": f"${cb.total_cost:.5f}",
+            }
+            return final_response, cost_info
 
     except Exception as e:
         print(f"Error invoking agent: {e}")
-        return "Sorry, I encountered an error. Please try again." 
+        return "Sorry, I encountered an error. Please try again.", None 
