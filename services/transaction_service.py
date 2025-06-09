@@ -39,7 +39,7 @@ def batch_categorize_transactions(transactions_to_categorize: list) -> dict:
         return {}
 
     print(
-        f"Batch categorizing {len(transactions_to_categorize)} transactions with Deepseek..."
+        f"Batch categorizing {len(transactions_to_categorize)} transactions with DeepSeek..."
     )
 
     transaction_list_str = "\n".join(
