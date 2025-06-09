@@ -1,18 +1,18 @@
 {
-  "overall_limit": 2000,
+  "overall_limit": 5000,
   "category_budgets": {
-    "Groceries": 10,
-    "Restaurants": 10,
-    "Shopping": 10,
-    "Transportation": 10,
-    "Bills & Utilities": 10,
-    "Entertainment": 10,
-    "Health & Wellness": 10,
-    "Housing": 10,
-    "Taxes": 10,
-    "Gifts & Donations": 10,
-    "Travel": 10,
-    "Personal Care": 10,
-    "Savings & Transfers": 10
+    "Groceries": 100,
+    "Restaurants": 100,
+    "Shopping": 100,
+    "Transportation": 100,
+    "Bills & Utilities": 100,
+    "Entertainment": 100,
+    "Health & Wellness": 100,
+    "Housing": 100,
+    "Taxes": 100,
+    "Gifts & Donations": 100,
+    "Travel": 100,
+    "Personal Care": 100,
+    "Savings & Transfers": 100
   }
 }

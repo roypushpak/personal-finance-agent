@@ -19,7 +19,6 @@ import time
 # --- LangChain Imports ---
 from langchain_openai import ChatOpenAI
 from langchain.agents import tool, AgentExecutor, create_react_agent
-from langchain import hub # To get pre-built prompts
 from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
@@ -419,14 +418,16 @@ def ask_agent():
         # --- LangChain Agent Implementation ---
         
         # 2. Define the tools the agent can use
-        # We wrap our existing function in a 'tool' decorator
         @tool
         def get_transaction_data() -> str:
             """
-            Returns the user's recent transaction data as two markdown-formatted tables (incoming and outgoing).
-            Call this tool whenever the user asks a question about their spending, income, or any financial activity.
+            Fetches the user's recent transaction data and budget limits.
+            This tool takes no arguments or input.
+            Call this to get the financial context needed to answer questions about spending, income, or budgeting.
             """
             print("[AGENT TOOL] get_transaction_data() called.")
+            
+            # 1. Fetch transactions
             incoming, outgoing, error = get_processed_transactions()
             if error:
                 return "Error: Could not retrieve transactions."
@@ -442,23 +443,88 @@ def ask_agent():
             if not out_df.empty:
                 out_md = out_df[['date', 'name', 'amount', 'ai_category']].rename(columns={'ai_category': 'category'}).to_markdown(index=False)
 
-            return f"INCOMING TRANSACTIONS:\n{inc_md}\n\nOUTGOING TRANSACTIONS:\n{out_md}"
+            # 2. Fetch budget data (with robust type conversion)
+            budget_md = "No budget data found."
+            try:
+                with open(BUDGET_FILE, 'r') as f:
+                    budget_data = json.load(f)
+                
+                overall_budget_value = budget_data.get('overall_budget')
+                category_budgets = budget_data.get('category_budgets', {})
+                
+                budget_lines = []
+                
+                # --- Robust Overall Budget Processing ---
+                try:
+                    overall_budget_float = float(overall_budget_value)
+                    budget_lines.append(f"Overall Monthly Budget: ${overall_budget_float:,.2f}")
+                except (ValueError, TypeError):
+                    budget_lines.append("Overall Monthly Budget: Not Set")
+
+                # --- Robust Category Budget Processing ---
+                if category_budgets:
+                    for category, limit in category_budgets.items():
+                        try:
+                            limit_float = float(limit)
+                            budget_lines.append(f"'{category}' category budget: ${limit_float:,.2f}")
+                        except (ValueError, TypeError):
+                            budget_lines.append(f"'{category}' category budget: Not Set")
+                
+                budget_md = "\n".join(budget_lines)
+
+            except (FileNotFoundError, json.JSONDecodeError):
+                print("[AGENT TOOL] budget.json not found or is invalid.")
+                pass
+
+            return f"BUDGET DATA:\n{budget_md}\n\nINCOMING TRANSACTIONS:\n{inc_md}\n\nOUTGOING TRANSACTIONS:\n{out_md}"
 
         tools = [get_transaction_data]
 
-        # 3. Get the prompt template
-        # This prompt tells the agent how to reason and what tools are available.
-        prompt = hub.pull("hwchase17/react")
+        # 3. Define the Agent's Prompt
+        # This is where you can customize the agent's personality and instructions.
+        AGENT_PROMPT_TEMPLATE = """
+You are a professional financial analyst AI. Your tone is formal, and your purpose is to provide precise, data-driven answers regarding the user's finances.
+You must base your analysis STRICTLY on the transaction and budget data provided in the tools.
+When analyzing expenses, you MUST compare them against the provided budget limits to assess the user's performance.
+Do not make assumptions or provide information not present in the data.
+If the data is insufficient to answer the question, state that clearly and concisely.
+Your final answer must be plain text, without any markdown formatting (e.g., no `**bold**` or `*italics*`).
+
+You have access to the following tools:
+{tools}
+
+Use the following format for your thought process:
+
+Question: The user's question you must answer.
+Thought: Your methodical analysis of the user's request and the steps needed to answer it.
+Action: The action to take, which must be one of the available tools: [{tool_names}].
+Action Input: The input to the action. If the tool takes no input, use an empty string.
+Observation: The data returned by the tool.
+... (this Thought/Action/Action Input/Observation sequence can repeat)
+Thought: I have now analyzed the data and can formulate a final answer.
+Final Answer: Your final, conclusive answer to the user's question. This must be plain text and not use any markdown.
+
+Begin.
+
+Question: {input}
+Thought:{agent_scratchpad}
+"""
+        prompt = PromptTemplate.from_template(AGENT_PROMPT_TEMPLATE)
         
         # 4. Create the agent
         agent = create_react_agent(llm, tools, prompt)
 
-        # 5. Create the agent executor
-        # This is the runtime that invokes the agent and executes the tools.
-        # verbose=True shows the agent's "chain of thought" in the terminal.
-        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+        # 5. Create the Agent Executor
+        # This is what runs the agent and its tools.
+        agent_executor = AgentExecutor(
+            agent=agent,
+            tools=tools,
+            verbose=True,
+            handle_parsing_errors=True  # Add this to handle LLM output parsing errors
+        )
 
-        # 6. Invoke the agent and get the response
+        # 6. Run the agent with the user's question
+        print(f"[AGENT] User question: {user_question}")
         response = agent_executor.invoke({"input": user_question})
         
         return jsonify({'answer': response['output']})
@@ -504,6 +570,54 @@ def set_access_token():
     except plaid.ApiException as e:
         return jsonify(json.loads(e.body))
 
+@app.route('/save_budget', methods=['POST'])
+def save_budget():
+    """Saves the user's budget to a JSON file."""
+    try:
+        data = request.get_json()
+        overall_budget_str = data.get('overall_budget')
+        category_budgets_str = data.get('category_budgets', {})
+
+        # Convert budget values from string to float, handling empty inputs
+        overall_budget = float(overall_budget_str) if overall_budget_str else None
+        
+        category_budgets = {}
+        if category_budgets_str:
+            for category, limit_str in category_budgets_str.items():
+                if limit_str: # Only add if a limit is provided
+                    try:
+                        category_budgets[category] = float(limit_str)
+                    except (ValueError, TypeError):
+                        print(f"Skipping invalid category budget for {category}: {limit_str}")
+                        pass # Skip if conversion fails
+
+        budget_data = {
+            'overall_budget': overall_budget,
+            'category_budgets': category_budgets
+        }
+
+        with open(BUDGET_FILE, 'w') as f:
+            json.dump(budget_data, f, indent=4)
+            
+        return jsonify({'status': 'success', 'message': 'Budget saved successfully.'})
+
+    except (ValueError, TypeError) as e:
+        print(f"[ERROR] Invalid budget data received for overall budget: {e}")
+        return jsonify({'status': 'error', 'message': 'Invalid data format for overall budget. Please enter a valid number.'}), 400
+    except Exception as e:
+        print(f"[ERROR] Could not save budget: {e}")
+        return jsonify({'status': 'error', 'message': 'Failed to save budget.'}), 500
+
+@app.route('/get_budget', methods=['GET'])
+def get_budget_route():
+    try:
+        budget_data = get_budget()
+        return jsonify(budget_data)
+    except Exception as e:
+        print(f"[ERROR] Could not load budget for route: {e}")
+        return jsonify({}), 500
+
 if __name__ == '__main__':
     # Use a different port to avoid conflicts
-    app.run(debug=True, port=5003)
+    # Adhere to Gunicorn's expected format HOST:PORT
+    app.run(debug=True, host='127.0.0.1', port=5001)
