@@ -104,7 +104,11 @@ def create_agent_executor(access_token):
         budget = get_budget()
 
         df_outgoing = pd.DataFrame(outgoing)
-        spending_by_category = df_outgoing.groupby("category")["amount"].sum().to_dict()
+        spending_by_category = {}
+        if not df_outgoing.empty:
+            spending_by_category = (
+                df_outgoing.groupby("category")["amount"].sum().to_dict()
+            )
 
         advice_prompt = f"""
         The user wants advice on their budget. Here is their spending by category:
