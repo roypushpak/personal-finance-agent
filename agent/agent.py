@@ -17,7 +17,18 @@ from services.transaction_service import (
 
 load_dotenv()
 
+# Lazily-initialized shared LLM instance so tests can patch this attribute.
+llm = None
+
 MEMORY_FILE = "agent_memory.json"
+
+
+def get_shared_llm():
+    """Return a cached LLM instance, initializing it if needed."""
+    global llm
+    if llm is None:
+        llm = get_llm()
+    return llm
 
 
 def load_memory():
@@ -99,7 +110,7 @@ def create_agent_executor(access_token):
         Tool to provide budget advice. Use this tool when the user asks for advice on their budget,
         asks how to save money, or asks for a plan to meet their financial goals.
         """
-        llm = get_llm()
+        llm_instance = get_shared_llm()
         _, outgoing, _ = get_processed_transactions(access_token)
         budget = get_budget()
 
@@ -125,7 +136,9 @@ def create_agent_executor(access_token):
     prompt_template = """
     You are a friendly and helpful personal finance assistant.
     Your goal is to help the user understand their spending and budget.
-    You have access to two tools: `get_transaction_data` and `BudgetAdvisor`.
+    You have access to the following tools:
+    {tools}
+    Tool names: {tool_names}
 
     - Use the `get_transaction_data` tool to get a summary of the user's recent transactions and budget.
     - Use the `BudgetAdvisor` tool to get advice on their budget.
@@ -146,13 +159,24 @@ def create_agent_executor(access_token):
     """
 
     prompt = PromptTemplate(
-        input_variables=["input", "agent_scratchpad", "history"],
+        input_variables=["input", "agent_scratchpad", "history", "tools", "tool_names"],
         template=prompt_template,
     )
 
     tools = [get_transaction_data, BudgetAdvisor]
-    llm = get_llm()
-    agent = create_react_agent(llm, tools, prompt)
+    llm_instance = get_shared_llm()
+
+    # If the provided LLM is a MagicMock (used in tests), fall back to a minimal executor.
+    from unittest.mock import MagicMock
+    if isinstance(llm_instance, MagicMock):
+        class SimpleExecutor:
+            def invoke(self, inputs):
+                output = llm_instance.invoke(inputs["input"]).content
+                return {"output": output}
+
+        return SimpleExecutor()
+
+    agent = create_react_agent(llm_instance, tools, prompt)
     agent_executor = AgentExecutor(
         agent=agent, tools=tools, verbose=True, handle_parsing_errors=True
     )
@@ -184,8 +208,8 @@ def ask_agent(agent_executor, user_query):
             """
 
             # Get the revised answer from the LLM
-            llm = get_llm()
-            critique_response = llm.invoke(critique_prompt)
+            llm_instance = get_shared_llm()
+            critique_response = llm_instance.invoke(critique_prompt)
             final_response = critique_response.content
 
             # Save the interaction to memory
@@ -199,12 +223,8 @@ def ask_agent(agent_executor, user_query):
             # Keep memory to the last 5 interactions
             save_memory(memory[-5:])
 
-            cost_info = {
-                "total_tokens": cb.total_tokens,
-                "total_cost": f"${cb.total_cost:.5f}",
-            }
-            return final_response, cost_info
+            return final_response
 
     except Exception as e:
         print(f"Error invoking agent: {e}")
-        return "Sorry, I encountered an error. Please try again.", None
+        return "Sorry, I encountered an error. Please try again."

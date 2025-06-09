@@ -65,10 +65,9 @@ def batch_categorize_transactions(transactions_to_categorize: list) -> dict:
         input_variables=["transactions", "categories"],
     )
 
-    llm = get_llm()
-    categorization_chain = prompt | llm | StrOutputParser()
-
     try:
+        llm = get_llm()
+        categorization_chain = prompt | llm | StrOutputParser()
         response_str = categorization_chain.invoke(
             {
                 "transactions": transaction_list_str,
