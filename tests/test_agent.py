@@ -5,8 +5,10 @@ from unittest.mock import patch, MagicMock
 
 @patch("agent.agent.get_processed_transactions")
 def test_ask_agent_not_empty(mock_get_transactions):
-    """
-    Tests that the ask_agent function returns a non-empty response.
+    """Tests that ``ask_agent`` returns a non-empty response and cost info.
+
+    ``ask_agent`` now returns a tuple ``(response, cost_info)`` rather than
+    only the response string.
     """
     # Mock the transaction data to avoid Plaid calls
     mock_get_transactions.return_value = ([], [], None)
