@@ -10,7 +10,10 @@ from pydantic import BaseModel, Field
 
 from services.budget_service import get_budget, save_budget
 from services.llm_service import get_llm
-from services.transaction_service import get_processed_transactions
+from services.transaction_service import (
+    BUDGET_CATEGORIES,
+    get_processed_transactions,
+)
 
 load_dotenv()
 
@@ -33,7 +36,7 @@ def save_memory(memory):
 
 def create_agent_executor(access_token):
     class GetTransactionDataInput(BaseModel):
-        pass
+        """Input for get_transaction_data."""
 
     @tool(args_schema=GetTransactionDataInput)
     def get_transaction_data() -> str:
@@ -186,7 +189,13 @@ def ask_agent(agent_executor, user_query):
             final_response = critique_response.content
 
             # Save the interaction to memory
-            memory.append({"query": user_query, "response": final_response})
+            memory.append(
+                {
+                    "query": user_query,
+                    "response": final_response,
+                    "cost": cb.total_cost,
+                }
+            )
             # Keep memory to the last 5 interactions
             save_memory(memory[-5:])
 

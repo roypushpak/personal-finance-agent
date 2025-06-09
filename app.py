@@ -38,8 +38,8 @@ app.register_blueprint(api_bp, url_prefix="/api")
 
 # --- Clear transaction cache on startup (for development) ---
 CACHE_FILE = "transactions_cache.json"
-if os.path.exists(CACHE_FILE):
-    os.remove(CACHE_FILE)
+        if os.path.exists(CACHE_FILE):
+            os.remove(CACHE_FILE)
     print("INFO: Cleared existing transaction cache for a fresh start.")
 
 

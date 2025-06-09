@@ -6,6 +6,7 @@ from services.plaid_service import (
 from services.budget_service import get_budget, save_budget
 from agent.agent import create_agent_executor, ask_agent as run_agent
 from extensions import limiter
+from pydantic import ValidationError
 
 api_bp = Blueprint("api", __name__)
 
@@ -73,5 +74,8 @@ def api_budget():
         budget_data = request.json
         if not budget_data:
             return jsonify({"error": "Budget data not provided"}), 400
-        save_budget(budget_data)
-        return jsonify({"status": "success"})
+        try:
+            save_budget(budget_data)
+            return jsonify({"status": "success"})
+        except ValidationError as e:
+            return jsonify({"error": "Invalid budget data", "details": e.errors()}), 422

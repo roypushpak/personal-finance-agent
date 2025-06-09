@@ -2,7 +2,9 @@
 
 This is a personal finance management application that allows users to connect their bank accounts, automatically categorize transactions, set budgets, and interact with an AI agent to gain insights into their spending habits.
 
-![Finance Agent Screenshot](https://i.imgur.com/your-screenshot.png) <!-- Replace with your screenshot -->
+**[[INSERT DEMO GIF OR SCREENSHOT HERE]]**
+
+_Replace this with a GIF or a high-quality screenshot of the application dashboard._
 
 ## Features
 
