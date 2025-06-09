@@ -7,7 +7,7 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import tool, AgentExecutor, create_react_agent
 from langchain.prompts import PromptTemplate
 from pydantic import BaseModel, Field
-from langchain_community.callbacks import OpenAICallback
+from langchain.callbacks import OpenAICallback
 
 from services.transaction_service import get_processed_transactions
 from services.budget_service import get_budget, save_budget

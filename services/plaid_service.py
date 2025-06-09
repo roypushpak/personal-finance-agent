@@ -15,29 +15,32 @@ import json
 
 load_dotenv()
 
-PLAID_CLIENT_ID = os.getenv("PLAID_CLIENT_ID")
-PLAID_SECRET = os.getenv("PLAID_SECRET")
 
-if not PLAID_CLIENT_ID or not PLAID_SECRET:
-    raise ValueError(
-        "PLAID_CLIENT_ID and PLAID_SECRET environment variables must be set."
+def get_plaid_client():
+    """Initializes and returns the Plaid client, checking for environment variables."""
+    PLAID_CLIENT_ID = os.getenv("PLAID_CLIENT_ID")
+    PLAID_SECRET = os.getenv("PLAID_SECRET")
+
+    if not PLAID_CLIENT_ID or not PLAID_SECRET:
+        raise ValueError(
+            "PLAID_CLIENT_ID and PLAID_SECRET environment variables must be set."
+        )
+
+    host = plaid.Environment.Sandbox  # or Development or Production
+    configuration = plaid.Configuration(
+        host=host,
+        api_key={
+            "clientId": PLAID_CLIENT_ID,
+            "secret": PLAID_SECRET,
+        },
     )
-
-# Plaid client setup
-host = plaid.Environment.Sandbox  # or Development or Production
-configuration = plaid.Configuration(
-    host=host,
-    api_key={
-        "clientId": PLAID_CLIENT_ID,
-        "secret": PLAID_SECRET,
-    },
-)
-api_client = plaid.ApiClient(configuration)
-client = plaid_api.PlaidApi(api_client)
+    api_client = plaid.ApiClient(configuration)
+    return plaid_api.PlaidApi(api_client)
 
 
 def create_link_token(client_user_id):
     """Creates a Plaid Link token."""
+    client = get_plaid_client()
     request = LinkTokenCreateRequest(
         user=LinkTokenCreateRequestUser(client_user_id=client_user_id),
         client_name="Personal Finance Agent",
@@ -51,6 +54,7 @@ def create_link_token(client_user_id):
 
 def exchange_public_token(public_token):
     """Exchanges a public token for an access token."""
+    client = get_plaid_client()
     request = ItemPublicTokenExchangeRequest(public_token=public_token)
     response = client.item_public_token_exchange(request)
     return response["access_token"], response["item_id"]
@@ -58,6 +62,7 @@ def exchange_public_token(public_token):
 
 def get_transactions(access_token, start_date, end_date):
     """Fetches transactions from Plaid."""
+    client = get_plaid_client()
     request = TransactionsGetRequest(
         access_token=access_token,
         start_date=start_date,
