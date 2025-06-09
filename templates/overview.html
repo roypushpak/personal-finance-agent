@@ -1,126 +1,136 @@
-{% extends "base.html" %} {% block title %}Budget Overview{% endblock %} {%
-block head_scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-{% endblock %} {% block content %}
-<h1 class="mt-5">Your Budget Overview</h1>
-<p class="lead">A 30-day summary of your incoming and outgoing transactions.</p>
+{% extends "base.html" %} {% block title %}Financial Overview{% endblock %} {%
+block content %}
+<div
+  class="container-fluid"
+  id="chart-data"
+  data-chart="{{ chart_data | tojson | safe }}"
+>
+  <h1 class="h2">Dashboard</h1>
+  <p class="text-muted">
+    A summary of your financial activity over the last 30 days.
+  </p>
 
-{% if overall_summary %}
-<div class="card mt-4">
-  <div class="card-body">
-    <h5 class="card-title">Overall Spending Progress</h5>
-    <div class="d-flex justify-content-between">
-      <span>${{ "%.2f"|format(overall_summary.spent) }}</span>
-      <span class="text-muted"
-        >${{ "%.2f"|format(overall_summary.limit) }}</span
-      >
+  {% if error %}
+  <div class="alert alert-danger">
+    <strong>Error:</strong> {{ error.error_code }} - {{ error.message }}
+    <p>
+      Could not retrieve transaction data. Please try linking your account
+      again.
+    </p>
+  </div>
+  {% elif not total_outgoing and not total_income %}
+  <div class="alert alert-info">
+    <p>No transactions found for the last 30 days.</p>
+  </div>
+  {% else %}
+  <!-- Stat Cards -->
+  <div class="row mb-4">
+    <div class="col-md-6">
+      <div class="card text-white bg-success mb-3">
+        <div class="card-body">
+          <h5 class="card-title">Total Income</h5>
+          <p class="card-text fs-4">${{ "%.2f"|format(total_income|abs) }}</p>
+        </div>
+      </div>
     </div>
-    <div class="progress" style="height: 25px">
-      {% set progress_color = 'bg-success' if overall_summary.percentage <= 75
-      else 'bg-warning' if overall_summary.percentage <= 100 else 'bg-danger' %}
-      <div
-        class="progress-bar {{ progress_color }}"
-        role="progressbar"
-        style="width: {{ overall_summary.percentage }}%;"
-        aria-valuenow="{{ overall_summary.percentage }}"
-        aria-valuemin="0"
-        aria-valuemax="100"
-      >
-        <strong>{{ "%.0f"|format(overall_summary.percentage) }}%</strong>
+    <div class="col-md-6">
+      <div class="card text-white bg-danger mb-3">
+        <div class="card-body">
+          <h5 class="card-title">Total Expenses</h5>
+          <p class="card-text fs-4">${{ "%.2f"|format(total_outgoing) }}</p>
+        </div>
       </div>
     </div>
   </div>
-</div>
-{% endif %}
 
-<div class="row mt-4">
-  <div class="col-md-6">
-    <h2 class="text-center">Outgoing by Category</h2>
-    <canvas id="expenseChart"></canvas>
+  <!-- Charts and Recent Transactions -->
+  <div class="row">
+    <div class="col-lg-6 mb-4">
+      <div class="card h-100">
+        <div class="card-header">Spending by Category</div>
+        <div class="card-body">
+          <canvas id="expensePieChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6 mb-4">
+      <div class="card h-100">
+        <div class="card-header">Recent Transactions</div>
+        <div class="card-body">
+          <table class="table table-hover">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Merchant</th>
+                <th>Category</th>
+                <th class="text-end">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in transactions %}
+              <tr>
+                <td>{{ t.date }}</td>
+                <td>{{ t.name }}</td>
+                <td>
+                  <span class="badge bg-secondary">{{ t.category }}</span>
+                </td>
+                <td class="text-end">${{ "%.2f"|format(t.amount) }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="4" class="text-center">No recent transactions.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="col-md-6">
-    <h2 class="text-center">Incoming by Category</h2>
-    <canvas id="incomeChart"></canvas>
-  </div>
+  {% endif %}
 </div>
 
-{% if product_not_ready %}
-<div class="alert alert-info mt-4" role="alert">
-  <p>
-    Your transaction data is being prepared. This page will refresh
-    automatically in a few seconds.
-  </p>
-  <div class="spinner-border text-primary" role="status">
-    <span class="visually-hidden">Loading...</span>
-  </div>
-</div>
 <script>
-  setTimeout(() => {
-    window.location.reload();
-  }, 7000);
-</script>
-{% endif %} {% if error %}
-<div class="alert alert-danger mt-4" role="alert">
-  <p>Oh no! Something went wrong:</p>
-  <pre>{{ error | tojson }}</pre>
-  <a href="/" class="btn btn-primary mt-2">Try Again</a>
-</div>
-{% endif %} {% endblock %} {% block body_scripts %}
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    // Expense Chart
-    const expenseLabels = {{ expense_chart_data.labels | tojson }};
-    const expenseValues = {{ expense_chart_data.data | tojson }};
-    if (expenseLabels.length > 0) {
-      new Chart(document.getElementById('expenseChart'), {
-        type: 'pie',
-        data: {
-          labels: expenseLabels,
-          datasets: [{
-            data: expenseValues,
-            backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']
-          }]
-        },
-        options: {
-          plugins: {
-            legend: {
-              position: 'top',
-              display: true
-            }
-          }
-        }
-      });
-    }
-
-    // Income Chart
-    const incomeLabels = {{ income_chart_data.labels | tojson }};
-    const incomeValues = {{ income_chart_data.data | tojson }};
-    if (incomeLabels.length > 0) {
-      const categoryColors = {
-        'Income': '#28a745',   // Bootstrap success green
-        'Interest': '#007bff', // Bootstrap primary blue
-        'Refund': '#6c757d'    // Bootstrap secondary gray
-      };
-      const backgroundColors = incomeLabels.map(label => categoryColors[label] || '#FFCE56'); // Default to yellow if unknown
-
-      new Chart(document.getElementById('incomeChart'), {
-        type: 'pie',
-        data: {
-          labels: incomeLabels,
-          datasets: [{
-            data: incomeValues,
-            backgroundColor: backgroundColors
-          }]
-        },
-        options: {
-          plugins: {
-            legend: {
-              position: 'top',
-              display: true
-            }
-          }
-        }
-      });
+  document.addEventListener("DOMContentLoaded", function () {
+    const chartDataEl = document.getElementById("chart-data");
+    if (chartDataEl) {
+      const chartData = JSON.parse(chartDataEl.dataset.chart);
+      if (chartData && chartData.labels.length > 0) {
+        new Chart(document.getElementById("expensePieChart"), {
+          type: "pie",
+          data: {
+            labels: chartData.labels,
+            datasets: [
+              {
+                label: "Spending",
+                data: chartData.data,
+                backgroundColor: [
+                  "#0d6efd",
+                  "#6c757d",
+                  "#198754",
+                  "#dc3545",
+                  "#ffc107",
+                  "#0dcaf0",
+                  "#d63384",
+                  "#fd7e14",
+                  "#6f42c1",
+                  "#20c997",
+                ],
+                hoverOffset: 4,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: "bottom",
+              },
+            },
+          },
+        });
+      }
     }
   });
 </script>

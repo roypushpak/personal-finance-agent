@@ -1,10 +1,12 @@
-{% extends "base.html" %} {% block title %}Set Your Budget{% endblock %} {%
-block content %}
-<div class="container mt-5">
-  <h1>Set Your Budget</h1>
-  <p class="lead">
-    Define your monthly spending limit and category-specific budgets.
-  </p>
+{% extends "base.html" %} {% block title %}Manage Budget{% endblock %} {% block
+content %}
+<div
+  class="container-fluid"
+  id="budget-categories"
+  data-categories="{{ budget_categories | tojson | safe }}"
+>
+  <h1 class="h2">Manage Budget</h1>
+  <p class="text-muted">Define your monthly spending limits.</p>
 
   <div id="save-notification" class="alert alert-success d-none" role="alert">
     Budget saved successfully!
@@ -12,13 +14,13 @@ block content %}
 
   <form id="budget-form">
     <div class="card mb-4">
+      <div class="card-header">Overall Monthly Spending Limit</div>
       <div class="card-body">
-        <h5 class="card-title">Overall Monthly Spending Limit</h5>
         <div class="input-group">
           <span class="input-group-text">$</span>
           <input
             type="number"
-            class="form-control"
+            class="form-control form-control-lg"
             id="overall_limit"
             name="overall_limit"
             placeholder="e.g., 2000"
@@ -30,18 +32,21 @@ block content %}
     </div>
 
     <div class="card">
+      <div class="card-header">Category Budgets</div>
       <div class="card-body">
-        <h5 class="card-title">Category Budgets</h5>
         <p class="card-text text-muted">
-          Set a budget for specific categories. Leave blank for no limit.
+          Set a budget for specific spending categories. Leave blank for no
+          limit.
         </p>
-        <div id="category-budgets-container">
+        <div id="category-budgets-container" class="row">
           <!-- Categories will be loaded here by JavaScript -->
         </div>
       </div>
     </div>
 
-    <button type="submit" class="btn btn-primary mt-4">Save Budget</button>
+    <button type="submit" class="btn btn-primary mt-4 btn-lg">
+      Save Budget
+    </button>
   </form>
 </div>
 {% endblock %} {% block body_scripts %}
@@ -54,39 +59,43 @@ block content %}
     );
     const notification = document.getElementById("save-notification");
 
-    // Fetch existing budget and categories to populate the form
     async function loadBudget() {
       try {
         const response = await fetch("/api/budget");
+        if (!response.ok) throw new Error("Failed to load budget data.");
         const data = await response.json();
 
-        overallLimitInput.value = data.budget.overall_limit || "";
+        overallLimitInput.value = data.overall_limit || "";
 
-        categoriesContainer.innerHTML = ""; // Clear previous entries
-        data.categories.forEach((category) => {
-          const budgetValue = data.budget.category_budgets
-            ? data.budget.category_budgets[category] || ""
-            : "";
-          const group = document.createElement("div");
-          group.classList.add("input-group", "mb-3");
-          group.innerHTML = `
-          <span class="input-group-text" style="width: 180px;">${category}</span>
-          <span class="input-group-text">$</span>
-          <input type="number" class="form-control" name="category_${category}" value="${budgetValue}" min="0" step="10">
-        `;
-          categoriesContainer.appendChild(group);
+        categoriesContainer.innerHTML = "";
+        const categoriesEl = document.getElementById("budget-categories");
+        const categories = JSON.parse(categoriesEl.dataset.categories);
+
+        categories.forEach((category) => {
+          const budgetValue =
+            data.category_budgets && data.category_budgets[category]
+              ? data.category_budgets[category]
+              : "";
+          const col = document.createElement("div");
+          col.classList.add("col-md-6", "mb-3");
+          col.innerHTML = `
+                      <div class="input-group">
+                          <span class="input-group-text" style="width: 150px;">${category}</span>
+                          <span class="input-group-text">$</span>
+                          <input type="number" class="form-control" name="category_${category}" value="${budgetValue}" min="0" step="10" placeholder="No limit">
+                      </div>
+                  `;
+          categoriesContainer.appendChild(col);
         });
       } catch (error) {
         console.error("Error loading budget:", error);
         categoriesContainer.innerHTML =
-          '<p class="text-danger">Could not load budget data.</p>';
+          '<p class="text-danger">Could not load budget categories.</p>';
       }
     }
 
-    // Handle form submission
     budgetForm.addEventListener("submit", async function (e) {
       e.preventDefault();
-
       const formData = new FormData(budgetForm);
       const budgetData = {
         overall_limit: parseFloat(formData.get("overall_limit")) || null,
@@ -96,7 +105,9 @@ block content %}
       for (const [key, value] of formData.entries()) {
         if (key.startsWith("category_")) {
           const categoryName = key.replace("category_", "");
-          budgetData.category_budgets[categoryName] = parseFloat(value) || null;
+          if (value) {
+            budgetData.category_budgets[categoryName] = parseFloat(value);
+          }
         }
       }
 
@@ -106,10 +117,10 @@ block content %}
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(budgetData),
         });
-        if (!response.ok) throw new Error("Failed to save budget");
+        if (!response.ok) throw new Error("Failed to save budget.");
 
-        // Show success notification
         notification.classList.remove("d-none");
+        window.scrollTo(0, 0);
         setTimeout(() => notification.classList.add("d-none"), 3000);
       } catch (error) {
         console.error("Error saving budget:", error);

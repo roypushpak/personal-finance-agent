@@ -1,42 +1,45 @@
-{% extends "base.html" %} {% block title %}Incoming Transactions{% endblock %}
-{% block content %}
-<h1 class="mt-5">Incoming Transactions</h1>
-<p class="lead">Your incoming transactions from the last 30 days.</p>
+{% extends "base.html" %} {% block title %}Income{% endblock %} {% block content
+%}
+<div class="container-fluid">
+  <h1 class="h2">Income</h1>
+  <p class="text-muted">Your incoming transactions from the last 30 days.</p>
 
-{% if incoming %}
-<table class="table table-striped mt-4">
-  <thead>
-    <tr>
-      <th scope="col">Date</th>
-      <th scope="col">Name</th>
-      <th scope="col">Amount</th>
-      <th scope="col">Category</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for t in incoming %}
-    <tr>
-      <td>{{ t.date }}</td>
-      <td>{{ t.name }}</td>
-      <td>${{ "%.2f"|format(t.amount) }}</td>
-      <td>
-        {% set category = t.ai_category %} {% if category == 'Income' %} {% set
-        badge_class = 'bg-success' %} {% elif category == 'Interest' %} {% set
-        badge_class = 'bg-primary' %} {% else %} {% set badge_class =
-        'bg-secondary' %} {% endif %}
-        <span class="badge {{ badge_class }}"> {{ category }} </span>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<div class="alert alert-info mt-4" role="alert">
-  You do not have any incoming transactions in the last 30 days.
+  <div class="card">
+    <div class="card-header">Transaction History</div>
+    <div class="card-body">
+      {% if transactions %}
+      <table class="table table-hover">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Source</th>
+            <th>Category</th>
+            <th class="text-end">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in transactions %}
+          <tr>
+            <td>{{ t.date }}</td>
+            <td>{{ t.name }}</td>
+            <td>
+              {% set category = t.category %} {% if category == 'Income' %} {%
+              set badge_class = 'bg-success' %} {% elif category == 'Interest'
+              %} {% set badge_class = 'bg-primary' %} {% else %} {% set
+              badge_class = 'bg-info text-dark' %} {% endif %}
+              <span class="badge {{ badge_class }}">{{ category }}</span>
+            </td>
+            <td class="text-end">${{ "%.2f"|format(t.amount|abs) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="alert alert-info" role="alert">
+        You do not have any incoming transactions in the last 30 days.
+      </div>
+      {% endif %}
+    </div>
+  </div>
 </div>
-{% endif %}
-
-<a href="{{ url_for('index') }}" class="btn btn-secondary mt-4 mb-5"
-  >Back to Home</a
->
 {% endblock %}

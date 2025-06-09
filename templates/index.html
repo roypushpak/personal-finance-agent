@@ -1,26 +1,66 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Personal Budgeting Agent</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Welcome - Personal Finance Agent</title>
     <link
-      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css"
       rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.3/dist/cosmo/bootstrap.min.css"
     />
+    <style>
+      body {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      .wrapper {
+        flex: 1;
+      }
+    </style>
   </head>
   <body>
-    <div class="container text-center">
-      <h1 class="mt-5">Personal Budgeting Agent</h1>
-      <p class="lead">Connect your bank account to get started.</p>
-      <button id="link-button" class="btn btn-primary btn-lg mt-4">
-        Link Your Bank Account
-      </button>
+    <div class="wrapper">
+      <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+          <a class="navbar-brand" href="/">FinanceAgent</a>
+        </div>
+      </nav>
+
+      <div class="container mt-5">
+        <div class="px-4 py-5 my-5 text-center">
+          <h1 class="display-4 fw-bold">Take Control of Your Finances</h1>
+          <div class="col-lg-6 mx-auto">
+            <p class="lead mb-4">
+              Our intelligent agent helps you track spending, manage budgets,
+              and uncover insights from your transaction data. Securely link
+              your bank account to get a complete picture of your financial
+              health.
+            </p>
+            <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
+              <button
+                id="link-button"
+                type="button"
+                class="btn btn-primary btn-lg px-4 gap-3"
+              >
+                Link Your Bank Account
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <footer class="footer mt-auto py-3 bg-light">
+      <div class="container text-center">
+        <span class="text-muted">Personal Finance Agent © 2024</span>
+      </div>
+    </footer>
 
     <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
     <script type="text/javascript">
       (async function () {
+        // Fetches a link token from your server
         const fetchLinkToken = async () => {
           const response = await fetch("/api/create_link_token", {
             method: "POST",
@@ -32,29 +72,21 @@
         const handler = Plaid.create({
           token: await fetchLinkToken(),
           onSuccess: async (public_token, metadata) => {
-            const response = await fetch("/api/set_access_token", {
+            await fetch("/api/set_access_token", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ public_token: public_token }),
             });
-            const data = await response.json();
-            if (data.redirect_url) {
-              window.location.href = data.redirect_url;
-            } else {
-              console.error(
-                "Error setting access token, no redirect URL received."
-              );
-            }
+            window.location.href = "/overview";
           },
-          onLoad: () => {},
           onExit: (err, metadata) => {
+            // The user exited the Link flow.
             if (err != null) {
-              console.log(err);
+              console.error("Plaid Link exited with error:", err);
             }
           },
-          onEvent: (eventName, metadata) => {},
         });
 
         const linkButton = document.getElementById("link-button");
