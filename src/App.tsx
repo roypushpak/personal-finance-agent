@@ -34,26 +34,23 @@ function Content() {
     );
   }
 
-  return (
-    <>
-      <Authenticated>
-        <Dashboard />
-      </Authenticated>
-      <Unauthenticated>
-        <div className="flex items-center justify-center min-h-[400px] p-8">
-          <div className="w-full max-w-md mx-auto">
-            <div className="text-center mb-8">
-              <h1 className="text-4xl font-bold text-primary mb-4">
-                Take Control of Your Finances
-              </h1>
-              <p className="text-xl text-secondary">
-                Track expenses, set budgets, and achieve your financial goals
-              </p>
-            </div>
-            <SignInForm />
+  if (loggedInUser === null) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px] p-8">
+        <div className="w-full max-w-md mx-auto">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold text-primary mb-4">
+              Take Control of Your Finances
+            </h1>
+            <p className="text-xl text-secondary">
+              Track expenses, set budgets, and achieve your financial goals
+            </p>
           </div>
+          <SignInForm />
         </div>
-      </Unauthenticated>
-    </>
-  );
+      </div>
+    );
+  }
+
+  return <Dashboard />;
 }
