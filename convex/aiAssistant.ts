@@ -1,11 +1,12 @@
 "use node";
 
-import { action } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { OpenAI } from "openai";
 
 const llm = new ChatOpenAI({
   modelName: "deepseek/deepseek-chat-v3-0324:free",
@@ -14,6 +15,11 @@ const llm = new ChatOpenAI({
     baseURL: "https://openrouter.ai/api/v1",
   },
   temperature: 0.1,
+});
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
 });
 
 export const askFinancialQuestion = action({
@@ -32,7 +38,7 @@ export const askFinancialQuestion = action({
 
       const [transactions, budgets, goals, monthlyStats, plaidTransactions] = await Promise.all([
         ctx.runQuery(api.transactions.list, { startDate, endDate, limit: 100 }),
-        ctx.runQuery(api.budgets.list),
+        ctx.runQuery(api.budgets.list, {}),
         ctx.runQuery(api.goals.list),
         ctx.runQuery(api.transactions.getMonthlyStats, {
           year: currentDate.getFullYear(),
@@ -92,7 +98,7 @@ export const generateFinancialSummary = action({
         month: currentDate.getMonth() + 1,
       });
 
-      const budgets = await ctx.runQuery(api.budgets.list);
+      const budgets = await ctx.runQuery(api.budgets.list, {});
       const goals = await ctx.runQuery(api.goals.list);
 
       const systemPrompt = `You are a financial advisor AI. Generate a brief, insightful financial summary for the user based on their current month's data. Focus on key insights, achievements, and recommendations.
@@ -119,5 +125,61 @@ Keep the summary concise (2-3 paragraphs) and actionable.`;
       console.error('Error generating summary:', error);
       return "Unable to generate financial summary at this time.";
     }
+  },
+});
+
+export const categorizeTransaction = internalAction({
+  args: {
+    description: v.string(),
+    userCategories: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { description, userCategories } = args;
+
+    const response = await openai.chat.completions.create({
+      model: "google/gemini-flash-1.5",
+      temperature: 0.5,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert financial assistant. Your task is to categorize a transaction based on its description and a list of available categories. Also, determine if the transaction is 'income' or 'expense'.
+
+          Respond with a JSON object with two keys: "category" and "type".
+
+          - The "category" must be one of the following: [${userCategories.join(", ")}].
+          - Choose the most relevant category. If no category is a good fit, use "Other".
+          - The "type" must be either "income" or "expense".
+
+          For example, for a description "Starbucks Coffee", you might respond:
+          {"category": "Food & Dining", "type": "expense"}
+          
+          For a description "Gusto Payroll", you might respond:
+          {"category": "Paycheck", "type": "income"}
+          `,
+        },
+        { role: "user", content: `Transaction description: "${description}"` },
+      ],
+    });
+
+    const content = response.choices[0].message.content;
+    if (!content) {
+      throw new Error("No content in AI response");
+    }
+
+    try {
+      const parsed = JSON.parse(content);
+      if (
+        typeof parsed.category === "string" &&
+        (parsed.type === "income" || parsed.type === "expense")
+      ) {
+        return parsed;
+      }
+    } catch (e) {
+      console.error("Failed to parse AI response JSON", e);
+    }
+    
+    // Fallback
+    return { category: "Other", type: "expense" };
   },
 });

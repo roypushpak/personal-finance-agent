@@ -102,6 +102,12 @@ export function GoalTracker({ detailed = false }: GoalTrackerProps) {
     }
   };
 
+  const daysLeft = (targetDate: string) => {
+    const diff = new Date(targetDate).getTime() - new Date().getTime();
+    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+    return days > 0 ? `${days} days left` : "Overdue";
+  };
+
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <div className="flex justify-between items-center mb-6">
@@ -164,22 +170,19 @@ export function GoalTracker({ detailed = false }: GoalTrackerProps) {
                   <span>
                     {formatCurrency(goal.currentAmount || 0)} of {formatCurrency(goal.targetAmount)}
                   </span>
-                  <span>{goal.progress.toFixed(1)}%</span>
+                  <span>{((goal.progress || 0) * 100).toFixed(1)}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
                     className="bg-blue-500 h-2 rounded-full transition-all"
-                    style={{ width: `${Math.min(goal.progress, 100)}%` }}
+                    style={{ width: `${(goal.progress || 0) * 100}%` }}
                   ></div>
                 </div>
               </div>
               
               <div className="flex justify-between items-center text-sm">
-                <span className={goal.daysRemaining > 0 ? "text-gray-600" : "text-red-600"}>
-                  {goal.daysRemaining > 0 
-                    ? `${goal.daysRemaining} days remaining`
-                    : `${Math.abs(goal.daysRemaining)} days overdue`
-                  }
+                <span className={daysLeft(goal.targetDate) === "Overdue" ? "text-red-600" : "text-gray-600"}>
+                  {daysLeft(goal.targetDate)}
                 </span>
                 {detailed && goal.status === "active" && (
                   <button

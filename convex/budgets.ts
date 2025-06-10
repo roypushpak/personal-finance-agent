@@ -1,40 +1,61 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { api } from "./_generated/api";
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    year: v.optional(v.number()),
+    month: v.optional(v.number()), // 1-12
+  },
+  handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
-    const budgets = await ctx.db
+    let budgetQuery = ctx.db
       .query("budgets")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
+      .withIndex("by_user", (q) => q.eq("userId", userId));
 
-    // Get category details and spending for each budget
+    if (args.year && args.month) {
+      const startOfMonth = new Date(args.year, args.month - 1, 1).toISOString().split("T")[0];
+      const endOfMonth = new Date(args.year, args.month, 0).toISOString().split("T")[0];
+      budgetQuery = budgetQuery.filter((q) =>
+        q.and(
+          q.lte(q.field("startDate"), endOfMonth),
+          q.gte(q.field("endDate"), startOfMonth)
+        )
+      );
+    }
+
+    const budgets = await budgetQuery.collect();
+
     const budgetsWithDetails = await Promise.all(
       budgets.map(async (budget) => {
         const category = await ctx.db.get(budget.categoryId);
         
-        // Calculate current spending for this budget period
-        const transactions = await ctx.db
+        const manualTransactions = await ctx.db
           .query("transactions")
-          .withIndex("by_category", (q) => q.eq("categoryId", budget.categoryId))
-          .filter((q) => 
-            q.and(
-              q.eq(q.field("userId"), userId),
-              q.gte(q.field("date"), budget.startDate),
-              q.lte(q.field("date"), budget.endDate),
-              q.eq(q.field("type"), "expense")
-            )
+          .withIndex("by_user_and_date", (q) =>
+            q.eq("userId", userId).gte("date", budget.startDate).lte("date", budget.endDate)
           )
+          .filter((q) => q.eq(q.field("categoryId"), budget.categoryId))
           .collect();
 
-        const spent = transactions.reduce((sum, t) => sum + t.amount, 0);
+        const plaidTransactions = await ctx.db
+          .query("plaidTransactions")
+          .withIndex("by_user_and_date", (q) =>
+            q.eq("userId", userId).gte("date", budget.startDate).lte("date", budget.endDate)
+          )
+          .filter((q) => q.eq(q.field("categoryId"), budget.categoryId))
+          .collect();
+        
+        const spent = [...manualTransactions, ...plaidTransactions]
+          .filter(t => t.type === "expense")
+          .reduce((sum, t) => sum + t.amount, 0);
+
         const remaining = budget.amount - spent;
-        const percentageUsed = budget.amount > 0 ? (spent / budget.amount) * 100 : 0;
+        const percentageUsed = (spent / budget.amount) * 100;
+        const isOverBudget = spent > budget.amount;
 
         return {
           ...budget,
@@ -42,11 +63,11 @@ export const list = query({
           spent,
           remaining,
           percentageUsed,
-          isOverBudget: spent > budget.amount,
+          isOverBudget,
         };
       })
     );
-
+    
     return budgetsWithDetails;
   },
 });

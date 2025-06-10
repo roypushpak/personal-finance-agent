@@ -1,4 +1,4 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
@@ -6,8 +6,9 @@ export const list = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
+    if (!userId) {
+      return [];
+    }
     return await ctx.db
       .query("categories")
       .withIndex("by_user", (q) => q.eq("userId", userId))
@@ -67,5 +68,34 @@ export const createDefaultCategories = mutation({
     }
 
     return categoryIds;
+  },
+});
+
+export const getOrCreate = internalMutation({
+  args: {
+    name: v.string(),
+    type: v.union(v.literal("income"), v.literal("expense")),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("categories")
+      .withIndex("by_user_and_name", (q) => 
+        q.eq("userId", args.userId).eq("name", args.name)
+      )
+      .first();
+
+    if (existing) {
+      return existing._id;
+    }
+
+    return await ctx.db.insert("categories", {
+      name: args.name,
+      type: args.type,
+      userId: args.userId,
+      isDefault: false,
+      color: "#888888", // Default color
+      icon: "💰", // Default icon
+    });
   },
 });

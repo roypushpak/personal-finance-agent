@@ -31,7 +31,7 @@ export const createLinkToken = action({
         },
         client_name: "Personal Finance App",
         products: [Products.Transactions],
-        country_codes: [CountryCode.Us],
+        country_codes: [CountryCode.Ca],
         language: 'en',
       });
 
@@ -69,7 +69,7 @@ export const exchangePublicToken = action({
       // Fetch and sync initial transactions
       await ctx.runAction(internal.plaid.syncTransactions, {
         userId,
-        accessToken,
+        itemId,
       });
 
       return { success: true };
@@ -83,49 +83,75 @@ export const exchangePublicToken = action({
 export const syncTransactions = internalAction({
   args: {
     userId: v.id("users"),
-    accessToken: v.string(),
+    itemId: v.string(),
   },
   handler: async (ctx, args) => {
     try {
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 30); // Last 30 days
-      const endDate = new Date();
+      const token = await ctx.runQuery(api.users.getAccessToken, { itemId: args.itemId });
+      if (!token) throw new Error("Access token not found");
 
-      const response = await plaidClient.transactionsGet({
-        access_token: args.accessToken,
-        start_date: startDate.toISOString().split('T')[0],
-        end_date: endDate.toISOString().split('T')[0],
+      let cursor = await ctx.runMutation(internal.plaidData.getSyncCursor, { itemId: args.itemId });
+
+      let added: any[] = [];
+      let modified: any[] = [];
+      let removed: any[] = [];
+      let hasMore = true;
+
+      while (hasMore) {
+        const response = await plaidClient.transactionsSync({
+          access_token: token.accessToken,
+          cursor: cursor || undefined,
+        });
+
+        added = added.concat(response.data.added);
+        modified = modified.concat(response.data.modified);
+        removed = removed.concat(response.data.removed);
+        hasMore = response.data.has_more;
+        cursor = response.data.next_cursor;
+      }
+
+      const userCategories = await ctx.runQuery(api.categories.list);
+      const categoryNames = userCategories.map(c => c.name);
+
+      // Process added/modified transactions
+      for (const transaction of [...added, ...modified]) {
+        const { category: categoryName, type: transactionType } =
+          await ctx.runAction(internal.aiAssistant.categorizeTransaction, {
+            description: transaction.name,
+            userCategories: categoryNames,
+          });
+
+        const categoryId = await ctx.runMutation(internal.categories.getOrCreate, {
+          name: categoryName,
+          type: transactionType,
+          userId: args.userId,
+        });
+
+        if (categoryId) {
+          await ctx.runMutation(internal.plaidData.storeTransaction, {
+            userId: args.userId,
+            transactionId: transaction.transaction_id,
+            accountId: transaction.account_id,
+            amount: Math.abs(transaction.amount),
+            name: transaction.name,
+            description: transaction.name,
+            paymentChannel: transaction.payment_channel || "unknown",
+            pending: transaction.pending,
+            date: transaction.date,
+            categoryId: categoryId,
+            type: transactionType,
+          });
+        }
+      }
+
+      // TODO: Handle removed transactions
+
+      await ctx.runMutation(internal.plaidData.updateSyncCursor, {
+        itemId: args.itemId,
+        cursor: cursor!,
       });
 
-      const accounts = response.data.accounts;
-      const transactions = response.data.transactions;
-
-      // Store accounts
-      for (const account of accounts) {
-        await ctx.runMutation(internal.plaidData.storeAccount, {
-          userId: args.userId,
-          accountId: account.account_id,
-          name: account.name,
-          type: account.type,
-          subtype: account.subtype || "",
-          balance: account.balances.current || 0,
-        });
-      }
-
-      // Store transactions
-      for (const transaction of transactions) {
-        await ctx.runMutation(internal.plaidData.storeTransaction, {
-          userId: args.userId,
-          transactionId: transaction.transaction_id,
-          accountId: transaction.account_id,
-          amount: transaction.amount,
-          description: transaction.name,
-          date: transaction.date,
-          category: transaction.category?.[0] || "Other",
-        });
-      }
-
-      return { synced: transactions.length };
+      return { synced: added.length + modified.length };
     } catch (error) {
       console.error('Error syncing transactions:', error);
       throw new Error('Failed to sync transactions');

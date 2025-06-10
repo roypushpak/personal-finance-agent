@@ -1,12 +1,26 @@
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { useState } from "react";
 
 export function MonthlyStats() {
-  const currentDate = new Date();
-  const stats = useQuery(api.transactions.getMonthlyStats, {
-    year: currentDate.getFullYear(),
-    month: currentDate.getMonth() + 1,
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d; // first day of current month
   });
+
+  const stats = useQuery(api.transactions.getMonthlyStats, {
+    year: selectedDate.getFullYear(),
+    month: selectedDate.getMonth() + 1,
+  });
+
+  const changeMonth = (delta: number) => {
+    setSelectedDate((prev) => {
+      const newDate = new Date(prev);
+      newDate.setMonth(prev.getMonth() + delta);
+      return newDate;
+    });
+  };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -30,11 +44,41 @@ export function MonthlyStats() {
     );
   }
 
-  const monthName = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const monthName = selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-xl font-semibold mb-4">{monthName} Overview</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-semibold">{monthName} Overview</h2>
+        <div className="flex items-center gap-2">
+          <button onClick={() => changeMonth(-1)} className="px-2 py-1 border rounded">◀</button>
+          <input
+            type="month"
+            value={`${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2,"0")}`}
+            onChange={(e) => {
+              const [year, month] = e.target.value.split("-").map(Number);
+              const d = new Date(selectedDate);
+              d.setFullYear(year);
+              d.setMonth(month - 1);
+              setSelectedDate(d);
+            }}
+            className="border rounded px-2 py-1 text-sm"
+          />
+          <button
+            onClick={() => changeMonth(1)}
+            disabled={(() => {
+              const today = new Date();
+              return (
+                selectedDate.getFullYear() === today.getFullYear() &&
+                selectedDate.getMonth() === today.getMonth()
+              );
+            })()}
+            className="px-2 py-1 border rounded disabled:opacity-50"
+          >
+            ▶
+          </button>
+        </div>
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-green-50 p-4 rounded-lg">

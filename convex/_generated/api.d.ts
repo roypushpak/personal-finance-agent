@@ -24,6 +24,7 @@ import type * as plaid from "../plaid.js";
 import type * as plaidData from "../plaidData.js";
 import type * as router from "../router.js";
 import type * as transactions from "../transactions.js";
+import type * as users from "../users.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -45,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   plaidData: typeof plaidData;
   router: typeof router;
   transactions: typeof transactions;
+  users: typeof users;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,

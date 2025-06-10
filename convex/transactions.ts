@@ -121,35 +121,47 @@ export const getMonthlyStats = query({
     const startDate = new Date(args.year, args.month - 1, 1).toISOString().split('T')[0];
     const endDate = new Date(args.year, args.month, 0).toISOString().split('T')[0];
 
-    const transactions = await ctx.db
+    const manualTransactions = await ctx.db
       .query("transactions")
       .withIndex("by_user_and_date", (q) => 
         q.eq("userId", userId).gte("date", startDate).lte("date", endDate)
       )
       .collect();
 
-    const totalIncome = transactions
+    const plaidTransactions = await ctx.db
+      .query("plaidTransactions")
+      .withIndex("by_user_and_date", (q) =>
+        q.eq("userId", userId).gte("date", startDate).lte("date", endDate)
+      )
+      .collect();
+
+    const allTransactions = [...manualTransactions, ...plaidTransactions];
+
+    const totalIncome = allTransactions
       .filter(t => t.type === "income")
       .reduce((sum, t) => sum + t.amount, 0);
 
-    const totalExpenses = transactions
+    const totalExpenses = allTransactions
       .filter(t => t.type === "expense")
       .reduce((sum, t) => sum + t.amount, 0);
 
-    const categoryBreakdown = transactions.reduce((acc, transaction) => {
+    const categoryBreakdown = allTransactions.reduce((acc, transaction) => {
+      if (!transaction.categoryId) return acc;
       const categoryId = transaction.categoryId;
       if (!acc[categoryId]) {
         acc[categoryId] = { income: 0, expense: 0 };
       }
-      acc[categoryId][transaction.type] += transaction.amount;
+      if (transaction.type) {
+          acc[categoryId][transaction.type] += transaction.amount;
+      }
       return acc;
     }, {} as Record<string, { income: number; expense: number }>);
-
+    
     return {
       totalIncome,
       totalExpenses,
       netIncome: totalIncome - totalExpenses,
-      transactionCount: transactions.length,
+      transactionCount: allTransactions.length,
       categoryBreakdown,
     };
   },

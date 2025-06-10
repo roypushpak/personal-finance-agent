@@ -10,7 +10,7 @@ const applicationTables = {
     icon: v.string(),
     userId: v.id("users"),
     isDefault: v.optional(v.boolean()),
-  }).index("by_user", ["userId"]),
+  }).index("by_user", ["userId"]).index("by_user_and_name", ["userId", "name"]),
 
   transactions: defineTable({
     amount: v.number(),
@@ -74,7 +74,8 @@ const applicationTables = {
     userId: v.id("users"),
     accessToken: v.string(),
     itemId: v.string(),
-  }).index("by_user", ["userId"]),
+    syncCursor: v.optional(v.string()),
+  }).index("by_user", ["userId"]).index("by_item", ["itemId"]),
 
   plaidAccounts: defineTable({
     userId: v.id("users"),
@@ -89,15 +90,21 @@ const applicationTables = {
 
   plaidTransactions: defineTable({
     userId: v.id("users"),
-    transactionId: v.string(),
     accountId: v.string(),
+    transactionId: v.string(),
     amount: v.number(),
-    description: v.string(),
     date: v.string(),
-    category: v.string(),
+    name: v.string(),
+    description: v.optional(v.string()),
+    paymentChannel: v.optional(v.string()),
+    pending: v.optional(v.boolean()),
+    type: v.union(v.literal("income"), v.literal("expense")),
+    categoryId: v.optional(v.id("categories")),
   })
     .index("by_user", ["userId"])
-    .index("by_user_and_transaction", ["userId", "transactionId"]),
+    .index("by_user_and_date", ["userId", "date"])
+    .index("by_user_and_transaction", ["userId", "transactionId"])
+    .index("by_account", ["accountId"]),
 };
 
 export default defineSchema({

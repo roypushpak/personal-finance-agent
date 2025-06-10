@@ -16,12 +16,29 @@ export function BudgetOverview({ detailed = false }: BudgetOverviewProps) {
     alertThreshold: "80",
   });
 
-  const budgets = useQuery(api.budgets.list);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d;
+  });
+
+  const budgets = useQuery(api.budgets.list, {
+    year: selectedDate.getFullYear(),
+    month: selectedDate.getMonth() + 1,
+  });
   const categories = useQuery(api.categories.list);
   const createBudget = useMutation(api.budgets.create);
   const deleteBudget = useMutation(api.budgets.remove);
 
   const expenseCategories = categories?.filter(cat => cat.type === "expense") || [];
+
+  const changeMonth = (delta: number) => {
+    setSelectedDate((prev) => {
+      const nd = new Date(prev);
+      nd.setMonth(prev.getMonth() + delta);
+      return nd;
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,6 +97,20 @@ export function BudgetOverview({ detailed = false }: BudgetOverviewProps) {
     <div className="bg-white rounded-lg shadow p-6">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-semibold">Budget Overview</h2>
+        <div className="flex items-center gap-2">
+          <button onClick={() => changeMonth(-1)} className="px-2 py-1 border rounded">◀</button>
+          <input
+            type="month"
+            value={`${selectedDate.getFullYear()}-${String(selectedDate.getMonth()+1).padStart(2,"0")}`}
+            onChange={(e) => {
+              const [y,m]=e.target.value.split("-").map(Number);
+              const d=new Date(selectedDate);d.setFullYear(y);d.setMonth(m-1);setSelectedDate(d);
+            }}
+            className="border rounded px-2 py-1 text-sm"
+          />
+          <button onClick={() => changeMonth(1)} className="px-2 py-1 border rounded disabled:opacity-50"
+            disabled={(()=>{const t=new Date();return t.getFullYear()===selectedDate.getFullYear()&&t.getMonth()===selectedDate.getMonth();})()}>▶</button>
+        </div>
         {detailed && (
           <button
             onClick={() => setShowForm(true)}
