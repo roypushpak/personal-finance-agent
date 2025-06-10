@@ -8,6 +8,7 @@
     "dev:frontend": "vite --open",
     "dev:backend": "convex dev",
     "build": "vite build",
+    "start": "serve -s dist",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
     "plaid": "^35.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "serve": "^14.2.3",
     "sonner": "^2.0.5",
     "tailwind-merge": "^3.1.0"
   },
