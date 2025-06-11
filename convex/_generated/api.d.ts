@@ -17,6 +17,7 @@ import type * as aiAssistant from "../aiAssistant.js";
 import type * as auth from "../auth.js";
 import type * as budgets from "../budgets.js";
 import type * as categories from "../categories.js";
+import type * as csv from "../csv.js";
 import type * as goals from "../goals.js";
 import type * as http from "../http.js";
 import type * as insights from "../insights.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   budgets: typeof budgets;
   categories: typeof categories;
+  csv: typeof csv;
   goals: typeof goals;
   http: typeof http;
   insights: typeof insights;

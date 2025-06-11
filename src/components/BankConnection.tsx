@@ -2,19 +2,15 @@ import { useState, useCallback, useEffect } from "react";
 import { useAction, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
-import { PlaidLink } from "react-plaid-link";
+import { usePlaidLink } from "react-plaid-link";
 
-declare global {
-  interface Window {
-    Plaid: any;
-  }
-}
 
 export function BankConnection() {
   const [linkToken, setLinkToken] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
   const generateLinkToken = useAction(api.plaid.createLinkToken);
   const exchangePublicToken = useAction(api.plaid.exchangePublicToken);
-  const accounts = useQuery(api.plaidData.getAccounts);
+  const accounts = useQuery(api.plaidData.getAccounts) || [];
   const migrateTransactions = useAction(api.plaidData.migrateTransactionsToCategorized);
   const [isMigrating, setIsMigrating] = useState(false);
 
@@ -32,23 +28,42 @@ export function BankConnection() {
     }
   };
 
+  const handleSuccess = useCallback(async (public_token: string) => {
+    try {
+      await exchangePublicToken({ publicToken: public_token });
+      toast.success("Bank account linked successfully!");
+
+    } catch (error) {
+      console.error("Error exchanging public token", error);
+      toast.error("Failed to link bank account. Please try again.");
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [exchangePublicToken, accounts]);
+
+  const { open, ready } = usePlaidLink({
+    token: linkToken,
+    onSuccess: handleSuccess,
+    onExit: () => {
+      setIsConnecting(false);
+    },
+  });
+
+  useEffect(() => {
+    if (ready && linkToken) {
+      open();
+    }
+  }, [ready, open, linkToken]);
+
   const handleConnect = async () => {
+    setIsConnecting(true);
     try {
       const { link_token } = await generateLinkToken();
       setLinkToken(link_token);
     } catch (error) {
       console.error("Error generating link token", error);
       toast.error("Failed to connect to Plaid. Please try again.");
-    }
-  };
-
-  const handleSuccess = async (public_token: string) => {
-    try {
-      await exchangePublicToken({ publicToken: public_token });
-      toast.success("Bank account linked successfully!");
-    } catch (error) {
-      console.error("Error exchanging public token", error);
-      toast.error("Failed to link bank account. Please try again.");
+      setIsConnecting(false);
     }
   };
 
@@ -73,22 +88,20 @@ export function BankConnection() {
       </div>
 
       <div className="mt-6 flex gap-4">
-        {linkToken ? (
-          <PlaidLink
-            token={linkToken}
-            onSuccess={(public_token: string) => handleSuccess(public_token)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Continue to Plaid
-          </PlaidLink>
-        ) : (
-          <button
-            onClick={handleConnect}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Link New Bank Account
-          </button>
-        )}
+        <button
+          onClick={handleConnect}
+          disabled={isConnecting}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-400 disabled:cursor-not-allowed flex items-center"
+        >
+          {isConnecting ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              <span>Connecting...</span>
+            </>
+          ) : (
+            "Link New Bank Account"
+          )}
+        </button>
         <button
           onClick={handleMigrate}
           disabled={isMigrating}

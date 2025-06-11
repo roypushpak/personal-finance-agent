@@ -1,20 +1,46 @@
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useState } from "react";
 import { toast } from "sonner";
+import { Id } from "../../convex/_generated/dataModel";
 
 export function TransactionList() {
   const transactions = useQuery(api.plaidData.getPlaidTransactions, { limit: 50 });
-  const deleteTransaction = useMutation(api.transactions.remove);
+  const deletePlaidTransaction = useMutation(api.plaidData.remove);
+  const exportTransactions = useAction(api.csv.exportTransactions);
+  const [isExporting, setIsExporting] = useState(false);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: Id<"plaidTransactions">) => {
     if (confirm("Are you sure you want to delete this transaction?")) {
       try {
-        await deleteTransaction({ id: id as any });
+        await deletePlaidTransaction({ id });
         toast.success("Transaction deleted");
       } catch (error) {
+        console.error("Delete error:", error);
         toast.error("Failed to delete transaction");
       }
+    }
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const csvData = await exportTransactions();
+      const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', 'transactions.csv');
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success('Transactions exported successfully');
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export transactions');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -37,6 +63,13 @@ export function TransactionList() {
     <div className="bg-white rounded-lg shadow p-6">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-semibold">Recent Transactions</h2>
+        <button
+          onClick={handleExport}
+          disabled={isExporting}
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+        >
+          {isExporting ? 'Exporting...' : 'Export to CSV'}
+        </button>
       </div>
 
       {!transactions ? (

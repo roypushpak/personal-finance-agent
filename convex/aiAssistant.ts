@@ -128,6 +128,61 @@ Goals: ${goals.length}`;
   },
 });
 
+export const batchCategorizeTransactions = internalAction({
+  args: {
+    transactions: v.array(v.object({ id: v.string(), description: v.string() })),
+    userCategories: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { transactions, userCategories } = args;
+
+    const response = await openai.chat.completions.create({
+      model: "google/gemini-flash-1.5",
+      temperature: 0.5,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert financial assistant. Your task is to categorize a batch of transactions. For each transaction, provide its category and type (income or expense).
+
+          Respond with a single JSON object with a "results" key, which is an array of objects. Each object must have "id", "category", and "type".
+
+          - The "category" must be one of the following: [${userCategories.join(", ")}], or "Other" if none fit.
+          - The "type" must be either "income" or "expense".
+
+          Example Request:
+          [{"id": "txn_1", "description": "Starbucks"}, {"id": "txn_2", "description": "Paycheck"}]
+
+          Example Response:
+          {"results": [{"id": "txn_1", "category": "Food & Dining", "type": "expense"}, {"id": "txn_2", "category": "Paycheck", "type": "income"}]}
+          `,
+        },
+        {
+          role: "user",
+          content: JSON.stringify(transactions.map(t => ({ id: t.id, description: t.description }))),
+        },
+      ],
+    });
+
+    const content = response.choices[0].message.content;
+    if (!content) {
+      throw new Error("No content in AI response");
+    }
+
+    try {
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed.results)) {
+        return parsed.results;
+      }
+    } catch (e) {
+      console.error("Failed to parse AI response JSON", e);
+    }
+
+    // Fallback for the entire batch
+    return transactions.map(t => ({ id: t.id, category: "Other", type: "expense" }));
+  },
+});
+
 export const categorizeTransaction = internalAction({
   args: {
     description: v.string(),

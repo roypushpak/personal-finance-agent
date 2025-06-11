@@ -158,16 +158,30 @@ export const getTransactions = query({
 export const getPlaidTransactions = query({
   args: {
     limit: v.optional(v.number()),
+    startDate: v.optional(v.string()),
+    endDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
-    const transactions = await ctx.db
+    let query = ctx.db
       .query("plaidTransactions")
-      .withIndex("by_user_and_date", (q) => q.eq("userId", userId))
+      .withIndex("by_user_and_date", (q) => q.eq("userId", userId));
+
+    // Apply date filtering if provided
+    if (args.startDate && args.endDate) {
+      query = query.filter(q => 
+        q.and(
+          q.gte(q.field("date"), args.startDate!),
+          q.lte(q.field("date"), args.endDate!)
+        )
+      );
+    }
+
+    const transactions = await query
       .order("desc")
-      .take(args.limit || 50);
+      .take(args.limit || 1000);
 
     const transactionsWithCategories = await Promise.all(
       transactions.map(async (transaction) => {
@@ -183,6 +197,21 @@ export const getPlaidTransactions = query({
     );
 
     return transactionsWithCategories;
+  },
+});
+
+export const remove = mutation({
+  args: { id: v.id("plaidTransactions") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated. User must be logged in to delete transactions");
+
+    const transaction = await ctx.db.get(args.id);
+    if (!transaction || transaction.userId !== userId) {
+      throw new Error("Transaction not found or unauthorized");
+    }
+
+    return await ctx.db.delete(args.id);
   },
 });
 

@@ -9,6 +9,7 @@ import { InsightPanel } from "./InsightPanel";
 import { MonthlyStats } from "./MonthlyStats";
 import { BankConnection } from "./BankConnection";
 import { AIAssistant } from "./AIAssistant";
+import { ChartCarousel } from "./ChartCarousel";
 
 export function Dashboard() {
   const [activeTab, setActiveTab] = useState("overview");
@@ -70,16 +71,37 @@ export function Dashboard() {
       </div>
 
       {/* Content */}
-      <div className="space-y-6">
+      <div className="pb-8">
         {activeTab === "overview" && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
-              <MonthlyStats selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
-              <BudgetOverview selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
-            </div>
-            <div className="space-y-6">
-              <GoalTracker />
-              <InsightPanel />
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Left Column: Stats and Budget */}
+              <div className="lg:col-span-7 space-y-6">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                  <MonthlyStats selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                  <BudgetOverview selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                  <GoalTracker />
+                </div>
+              </div>
+
+              {/* Right Column: Chart Carousel and Insights */}
+              <div className="lg:col-span-5 space-y-6">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                  <div className="px-4 pt-4 pb-2">
+                    <h3 className="text-sm font-medium text-gray-500">
+                      {selectedDate.toLocaleString('default', { month: 'long' })} {selectedDate.getFullYear()}
+                    </h3>
+                  </div>
+                  <ChartCarousel selectedDate={selectedDate} />
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                  <InsightPanel />
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -6,6 +6,13 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { api, internal } from "./_generated/api";
 import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from "plaid";
 
+// Define a type for the categorized results
+type CategorizedResult = {
+  id: string;
+  category: string;
+  type: "income" | "expense";
+};
+
 const configuration = new Configuration({
   basePath: PlaidEnvironments.sandbox, // Use sandbox for development
   baseOptions: {
@@ -66,6 +73,19 @@ export const exchangePublicToken = action({
         itemId,
       });
 
+      // Fetch accounts and store them
+      const accountsResponse = await plaidClient.accountsGet({ access_token: accessToken });
+      for (const account of accountsResponse.data.accounts) {
+        await ctx.runMutation(internal.plaidData.storeAccount, {
+          userId,
+          accountId: account.account_id,
+          name: account.name,
+          type: account.type,
+          subtype: account.subtype || "",
+          balance: account.balances.current || 0,
+        });
+      }
+
       // Fetch and sync initial transactions
       await ctx.runAction(internal.plaid.syncTransactions, {
         userId,
@@ -113,34 +133,45 @@ export const syncTransactions = internalAction({
       const userCategories = await ctx.runQuery(api.categories.list);
       const categoryNames = userCategories.map(c => c.name);
 
-      // Process added/modified transactions
-      for (const transaction of [...added, ...modified]) {
-        const { category: categoryName, type: transactionType } =
-          await ctx.runAction(internal.aiAssistant.categorizeTransaction, {
-            description: transaction.name,
-            userCategories: categoryNames,
-          });
-
-        const categoryId = await ctx.runMutation(internal.categories.getOrCreate, {
-          name: categoryName,
-          type: transactionType,
-          userId: args.userId,
+      // Batch categorize transactions
+      const transactionsToCategorize = [...added, ...modified].map(t => ({ id: t.transaction_id, description: t.name }));
+      
+      if (transactionsToCategorize.length > 0) {
+        const categorizedResults: CategorizedResult[] = await ctx.runAction(internal.aiAssistant.batchCategorizeTransactions, {
+          transactions: transactionsToCategorize,
+          userCategories: categoryNames,
         });
 
-        if (categoryId) {
-          await ctx.runMutation(internal.plaidData.storeTransaction, {
-            userId: args.userId,
-            transactionId: transaction.transaction_id,
-            accountId: transaction.account_id,
-            amount: Math.abs(transaction.amount),
-            name: transaction.name,
-            description: transaction.name,
-            paymentChannel: transaction.payment_channel || "unknown",
-            pending: transaction.pending,
-            date: transaction.date,
-            categoryId: categoryId,
+        const categorizedMap = new Map(categorizedResults.map((r: CategorizedResult) => [r.id, r]));
+
+        // Process added/modified transactions
+        for (const transaction of [...added, ...modified]) {
+          const categorizedResult = categorizedMap.get(transaction.transaction_id);
+          if (!categorizedResult) continue; // Skip if no categorization result
+
+          const { category: categoryName, type: transactionType } = categorizedResult;
+
+          const categoryId = await ctx.runMutation(internal.categories.getOrCreate, {
+            name: categoryName,
             type: transactionType,
+            userId: args.userId,
           });
+
+          if (categoryId) {
+            await ctx.runMutation(internal.plaidData.storeTransaction, {
+              userId: args.userId,
+              transactionId: transaction.transaction_id,
+              accountId: transaction.account_id,
+              amount: Math.abs(transaction.amount),
+              name: transaction.name,
+              description: transaction.name,
+              paymentChannel: transaction.payment_channel || "unknown",
+              pending: transaction.pending,
+              date: transaction.date,
+              categoryId: categoryId,
+              type: transactionType,
+            });
+          }
         }
       }
 
