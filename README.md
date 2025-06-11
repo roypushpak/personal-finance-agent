@@ -1,6 +1,6 @@
 # Personal Finance Management App
 
-Live Demo: https://budgeting-ai-agent.onrender.com
+Live Demo: https://personal-finance-agent-sz7v.onrender.com
 
 This is a comprehensive personal finance management application built with React, TypeScript, Convex, and Plaid. It provides a modern interface for tracking transactions, managing budgets, setting financial goals, and gaining insights into your spending habits.
 
