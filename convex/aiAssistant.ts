@@ -57,19 +57,20 @@ export const askFinancialQuestion = action({
         currentDate: currentDate.toISOString().split('T')[0],
       };
 
-      const systemPrompt = `You are a helpful financial advisor AI assistant. You have access to the user's financial data and can provide insights, answer questions, and give advice based on their spending patterns, budgets, and goals.
+      const systemPrompt = `You are a professional personal-finance advisor. Using the data supplied, craft concise, actionable answers in a clear business tone (no emojis, no markdown code fences).  
+• Focus on insights, recommendations, and explanations grounded in the numbers.  
+• When showing money, format as USD currency (e.g. $1,234.56).  
+• Do not reveal raw JSON or internal data structures.  
+• Do not prefix lines with bullets such as "*", "-", "•", or comment markers like "//".  
+• Keep the response under 300 words.
 
-Current Financial Data:
-- Monthly Stats: Total Income: $${monthlyStats.totalIncome}, Total Expenses: $${monthlyStats.totalExpenses}, Net Income: $${monthlyStats.netIncome}
-- Number of Transactions: ${transactions.length}
-- Number of Budgets: ${budgets.length}
-- Number of Goals: ${goals.length}
-- Bank Transactions (via Plaid): ${plaidTransactions.length}
-
-Detailed Data:
-${JSON.stringify(financialContext, null, 2)}
-
-Please provide helpful, accurate, and actionable financial advice based on this data. Be conversational and friendly, but also professional. If you notice any concerning patterns or opportunities for improvement, mention them. Always format monetary amounts as currency (e.g., $1,234.56).`;
+Current Financial Snapshot  
+Income: $${monthlyStats.totalIncome}  
+Expenses: $${monthlyStats.totalExpenses}  
+Net Income: $${monthlyStats.netIncome}  
+Transactions: ${transactions.length}  
+Budgets: ${budgets.length}  
+Goals: ${goals.length}`;
 
       const messages = [
         new SystemMessage(systemPrompt),
@@ -77,7 +78,7 @@ Please provide helpful, accurate, and actionable financial advice based on this 
       ];
 
       const response = await llm.invoke(messages);
-      return response.content as string;
+      return cleanResponse(response.content as string);
     } catch (error) {
       console.error('Error in AI assistant:', error);
       return "I'm sorry, I encountered an error while processing your question. Please try again later.";
@@ -101,18 +102,17 @@ export const generateFinancialSummary = action({
       const budgets = await ctx.runQuery(api.budgets.list, {});
       const goals = await ctx.runQuery(api.goals.list);
 
-      const systemPrompt = `You are a financial advisor AI. Generate a brief, insightful financial summary for the user based on their current month's data. Focus on key insights, achievements, and recommendations.
+      const systemPrompt = `You are a professional personal-finance advisor. Draft a concise (2–3 short paragraphs) summary of the user's current month, focusing on accomplishments, concerns, and next steps.  
+Use a formal, business-like tone—no emojis, markdown fences, or list bullets.  
+Always format dollar amounts as USD (e.g. $1,234.56).
 
-Monthly Stats:
-- Total Income: $${monthlyStats.totalIncome}
-- Total Expenses: $${monthlyStats.totalExpenses}
-- Net Income: $${monthlyStats.netIncome}
-- Transaction Count: ${monthlyStats.transactionCount}
-
-Budgets: ${budgets.length} active budgets
-Goals: ${goals.length} financial goals
-
-Keep the summary concise (2-3 paragraphs) and actionable.`;
+DATA  
+Income: $${monthlyStats.totalIncome}  
+Expenses: $${monthlyStats.totalExpenses}  
+Net: $${monthlyStats.netIncome}  
+Transactions: ${monthlyStats.transactionCount}  
+Budgets: ${budgets.length}  
+Goals: ${goals.length}`;
 
       const messages = [
         new SystemMessage(systemPrompt),
@@ -120,7 +120,7 @@ Keep the summary concise (2-3 paragraphs) and actionable.`;
       ];
 
       const response = await llm.invoke(messages);
-      return response.content as string;
+      return cleanResponse(response.content as string);
     } catch (error) {
       console.error('Error generating summary:', error);
       return "Unable to generate financial summary at this time.";
@@ -183,3 +183,13 @@ export const categorizeTransaction = internalAction({
     return { category: "Other", type: "expense" };
   },
 });
+
+function cleanResponse(text: string): string {
+  // Remove leading markdown fences and asterisks/bullets from beginnings of lines
+  return text
+    .replace(/^```[\s\S]*?```/g, "") // remove fenced blocks
+    .split("\n")
+    .map((line) => line.replace(/^\s*([*•\-\/]{1,2}\s*)/, "").trimEnd())
+    .join("\n")
+    .trim();
+}

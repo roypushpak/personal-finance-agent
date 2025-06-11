@@ -13,6 +13,11 @@ import { AIAssistant } from "./AIAssistant";
 export function Dashboard() {
   const [activeTab, setActiveTab] = useState("overview");
   const [showTransactionForm, setShowTransactionForm] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d;
+  });
   
   const categories = useQuery(api.categories.list);
   const createDefaultCategories = useMutation(api.categories.createDefaultCategories);
@@ -69,8 +74,8 @@ export function Dashboard() {
         {activeTab === "overview" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
-              <MonthlyStats />
-              <BudgetOverview />
+              <MonthlyStats selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
+              <BudgetOverview selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
             </div>
             <div className="space-y-6">
               <GoalTracker />
@@ -80,7 +85,7 @@ export function Dashboard() {
         )}
 
         {activeTab === "transactions" && <TransactionList />}
-        {activeTab === "budgets" && <BudgetOverview detailed />}
+        {activeTab === "budgets" && <BudgetOverview detailed selectedDate={selectedDate} setSelectedDate={setSelectedDate} />}
         {activeTab === "goals" && <GoalTracker detailed />}
         {activeTab === "insights" && <InsightPanel detailed />}
         {activeTab === "banking" && <BankConnection />}

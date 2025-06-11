@@ -1,25 +1,21 @@
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { useState } from "react";
+import { useState, Dispatch, SetStateAction } from "react";
 import { toast } from "sonner";
 
 interface BudgetOverviewProps {
   detailed?: boolean;
+  selectedDate: Date;
+  setSelectedDate: Dispatch<SetStateAction<Date>>;
 }
 
-export function BudgetOverview({ detailed = false }: BudgetOverviewProps) {
+export function BudgetOverview({ detailed = false, selectedDate, setSelectedDate }: BudgetOverviewProps) {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     categoryId: "",
     amount: "",
     period: "monthly" as "monthly" | "yearly",
     alertThreshold: "80",
-  });
-
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const d = new Date();
-    d.setDate(1);
-    return d;
   });
 
   const budgets = useQuery(api.budgets.list, {
@@ -49,9 +45,8 @@ export function BudgetOverview({ detailed = false }: BudgetOverviewProps) {
     }
 
     try {
-      const currentDate = new Date();
-      const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-      const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+      const startDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+      const endDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
 
       await createBudget({
         categoryId: formData.categoryId as any,

@@ -1,14 +1,13 @@
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { useState } from "react";
+import { Dispatch, SetStateAction } from "react";
 
-export function MonthlyStats() {
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const d = new Date();
-    d.setDate(1);
-    return d; // first day of current month
-  });
+interface MonthlyStatsProps {
+  selectedDate: Date;
+  setSelectedDate: Dispatch<SetStateAction<Date>>;
+}
 
+export function MonthlyStats({ selectedDate, setSelectedDate }: MonthlyStatsProps) {
   const stats = useQuery(api.transactions.getMonthlyStats, {
     year: selectedDate.getFullYear(),
     month: selectedDate.getMonth() + 1,
