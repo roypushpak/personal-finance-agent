@@ -10,7 +10,7 @@ export const list = query({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to access budgets");
 
     let budgetQuery = ctx.db
       .query("budgets")
@@ -83,7 +83,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to create budgets");
 
     return await ctx.db.insert("budgets", {
       ...args,
@@ -100,7 +100,7 @@ export const update = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to update budgets");
 
     const { id, ...updates } = args;
     const budget = await ctx.db.get(id);
@@ -117,7 +117,7 @@ export const remove = mutation({
   args: { id: v.id("budgets") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to delete budgets");
 
     const budget = await ctx.db.get(args.id);
     if (!budget || budget.userId !== userId) {

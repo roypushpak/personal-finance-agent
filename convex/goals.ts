@@ -6,7 +6,7 @@ export const list = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to access goals");
 
     const goals = await ctx.db
       .query("goals")
@@ -29,7 +29,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to create goals");
     
     await ctx.db.insert("goals", {
       ...args,

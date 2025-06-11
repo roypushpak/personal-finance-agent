@@ -10,7 +10,7 @@ export const list = query({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to access transactions");
 
     let query = ctx.db
       .query("transactions")
@@ -61,7 +61,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to access transactions");
 
     return await ctx.db.insert("transactions", {
       ...args,
@@ -81,7 +81,7 @@ export const update = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to access transactions");
 
     const { id, ...updates } = args;
     const transaction = await ctx.db.get(id);
@@ -98,7 +98,7 @@ export const remove = mutation({
   args: { id: v.id("transactions") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to access transactions");
 
     const transaction = await ctx.db.get(args.id);
     if (!transaction || transaction.userId !== userId) {
@@ -116,7 +116,7 @@ export const getMonthlyStats = query({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to access transaction stats");
 
     const startDate = new Date(args.year, args.month - 1, 1).toISOString().split('T')[0];
     const endDate = new Date(args.year, args.month, 0).toISOString().split('T')[0];

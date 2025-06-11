@@ -8,7 +8,7 @@ export const list = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to access insights");
 
     return await ctx.db
       .query("insights")
@@ -22,7 +22,7 @@ export const generate = action({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to access insights");
 
     // This is a placeholder for a real insight generation engine
     await ctx.runMutation(internal.insights.create, {
@@ -55,7 +55,7 @@ export const markAsRead = mutation({
   args: { id: v.id("insights") },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new Error("Not authenticated. User must be logged in to access insights");
 
     const insight = await ctx.db.get(args.id);
     if (!insight || insight.userId !== userId) {
