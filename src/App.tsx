@@ -4,14 +4,30 @@ import { SignInForm } from "./SignInForm";
 import { SignOutButton } from "./SignOutButton";
 import { Toaster } from "sonner";
 import { Dashboard } from "./components/Dashboard";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { NetworkStatus } from "./components/NetworkStatus";
+import { useServiceWorker } from "./hooks/useServiceWorker";
+import { SyncStatus } from "./components/SyncStatus";
 
+// Register service worker on component mount
 export default function App() {
+  const { isOnline } = useServiceWorker();
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm h-16 flex justify-between items-center border-b shadow-sm px-4">
-        <h2 className="text-xl font-semibold text-primary">💰 Personal Finance</h2>
+        <div className="flex items-center space-x-2">
+          <h2 className="text-xl font-semibold text-primary">💰 Personal Finance</h2>
+          <div className="flex items-center">
+            {!isOnline && (
+              <span className="ml-2 px-2 py-0.5 text-xs bg-yellow-100 text-yellow-800 rounded-full flex items-center">
+                <span className="w-2 h-2 rounded-full bg-yellow-500 mr-1"></span>
+                Offline
+              </span>
+            )}
+          </div>
+        </div>
         <Authenticated>
           <SignOutButton />
         </Authenticated>
@@ -21,7 +37,9 @@ export default function App() {
           <Content />
         </ErrorBoundary>
       </main>
-      <Toaster />
+      <NetworkStatus />
+      <SyncStatus />
+      <Toaster position="top-center" />
     </div>
   );
 }

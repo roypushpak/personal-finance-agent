@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
+import { useOfflineSync } from "../hooks/useOfflineSync";
+import { MobileToast } from "./MobileToast";
 
 interface TransactionFormProps {
   onSuccess?: () => void;
@@ -19,6 +21,12 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
 
   const categories = useQuery(api.categories.list);
   const createTransaction = useMutation(api.transactions.create);
+  const { isOnline, addToQueue, getQueueItem } = useOfflineSync();
+  const [queuedTransactionId, setQueuedTransactionId] = useState<string | null>(null);
+  const [showOfflineToast, setShowOfflineToast] = useState(false);
+
+  // Check if we have a queued transaction that was just added
+  const queuedTransaction = queuedTransactionId ? getQueueItem(queuedTransactionId) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,17 +36,30 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
       return;
     }
 
-    try {
-      await createTransaction({
-        amount: parseFloat(formData.amount),
-        description: formData.description,
-        categoryId: formData.categoryId as any,
-        date: formData.date,
-        type: formData.type,
-        tags: formData.tags ? formData.tags.split(",").map(tag => tag.trim()) : undefined,
-      });
+    const transactionData = {
+      amount: parseFloat(formData.amount),
+      description: formData.description,
+      categoryId: formData.categoryId as any,
+      date: formData.date,
+      type: formData.type,
+      tags: formData.tags ? formData.tags.split(",").map(tag => tag.trim()) : undefined,
+    };
 
-      toast.success("Transaction added successfully!");
+    try {
+      if (isOnline) {
+        await createTransaction(transactionData);
+        toast.success("Transaction added successfully!");
+      } else {
+        // Add to offline queue
+        const queueId = addToQueue('transaction', transactionData);
+        setQueuedTransactionId(queueId);
+        setShowOfflineToast(true);
+        // Show success message after a short delay to allow the queue to update
+        setTimeout(() => onSuccess?.(), 100);
+        return;
+      }
+
+      // Reset form on success
       setFormData({
         amount: "",
         description: "",
@@ -56,7 +77,28 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
   const filteredCategories = categories?.filter(cat => cat.type === formData.type) || [];
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="space-y-4">
+      {showOfflineToast && (
+        <MobileToast
+          message="You're offline. Transaction will be synced when you're back online."
+          type="info"
+          duration={5000}
+          onClose={() => setShowOfflineToast(false)}
+        />
+      )}
+      {queuedTransaction && queuedTransaction.status === 'pending' && (
+        <div className="bg-blue-50 text-blue-800 p-3 rounded-md text-sm flex items-center">
+          <span className="mr-2">🔄</span>
+          <span>Transaction saved offline and will sync when you're back online</span>
+        </div>
+      )}
+      {queuedTransaction && queuedTransaction.status === 'error' && (
+        <div className="bg-red-50 text-red-800 p-3 rounded-md text-sm flex items-center">
+          <span className="mr-2">❌</span>
+          <span>Failed to sync transaction. Please try again when online.</span>
+        </div>
+      )}
+      <form onSubmit={handleSubmit} className="space-y-4">
       <div className="flex gap-2">
         <button
           type="button"
@@ -163,5 +205,6 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
         Add Transaction
       </button>
     </form>
+    </div>
   );
 }
