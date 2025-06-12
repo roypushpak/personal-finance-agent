@@ -5,6 +5,7 @@ import { SignOutButton } from "./SignOutButton";
 import { Toaster } from "sonner";
 import { Dashboard } from "./components/Dashboard";
 import { useState } from "react";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 export default function App() {
   return (
@@ -16,7 +17,9 @@ export default function App() {
         </Authenticated>
       </header>
       <main className="flex-1">
-        <Content />
+        <ErrorBoundary>
+          <Content />
+        </ErrorBoundary>
       </main>
       <Toaster />
     </div>

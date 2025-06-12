@@ -10,6 +10,7 @@ import { MonthlyStats } from "./MonthlyStats";
 import { BankConnection } from "./BankConnection";
 import { AIAssistant } from "./AIAssistant";
 import { ChartCarousel } from "./ChartCarousel";
+import { SpendingForecast } from "./SpendingForecast";
 
 export function Dashboard() {
   const [activeTab, setActiveTab] = useState("overview");
@@ -96,7 +97,12 @@ export function Dashboard() {
                       {selectedDate.toLocaleString('default', { month: 'long' })} {selectedDate.getFullYear()}
                     </h3>
                   </div>
-                  <ChartCarousel selectedDate={selectedDate} />
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 gap-6">
+                      <ChartCarousel selectedDate={selectedDate} />
+                    </div>
+                    <SpendingForecast />
+                  </div>
                 </div>
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                   <InsightPanel />
