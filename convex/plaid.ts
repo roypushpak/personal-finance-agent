@@ -136,20 +136,28 @@ export const syncTransactions = internalAction({
       // Batch categorize transactions
       const transactionsToCategorize = [...added, ...modified].map(t => ({ id: t.transaction_id, description: t.name }));
       
+      let categorizedMap = new Map<string, CategorizedResult>();
+      
       if (transactionsToCategorize.length > 0) {
-        const categorizedResults: CategorizedResult[] = await ctx.runAction(internal.aiAssistant.batchCategorizeTransactions, {
-          transactions: transactionsToCategorize,
-          userCategories: categoryNames,
-        });
-
-        const categorizedMap = new Map(categorizedResults.map((r: CategorizedResult) => [r.id, r]));
+        try {
+          const categorizedResults: CategorizedResult[] = await ctx.runAction(internal.aiAssistant.batchCategorizeTransactions, {
+            transactions: transactionsToCategorize,
+            userCategories: categoryNames,
+          });
+          categorizedMap = new Map(categorizedResults.map((r: CategorizedResult) => [r.id, r]));
+          console.log(`Categorized ${categorizedResults.length} of ${transactionsToCategorize.length} transactions`);
+        } catch (error) {
+          console.error('Error categorizing transactions:', error);
+          console.log('Falling back to "Other" category for all transactions');
+          // Continue without categorization - will use "Other" category
+        }
 
         // Process added/modified transactions
         for (const transaction of [...added, ...modified]) {
           const categorizedResult = categorizedMap.get(transaction.transaction_id);
-          if (!categorizedResult) continue; // Skip if no categorization result
-
-          const { category: categoryName, type: transactionType } = categorizedResult;
+          // Default to "Other" category if categorization failed or not found
+          const categoryName = categorizedResult?.category || "Other";
+          const transactionType = categorizedResult?.type || (transaction.amount < 0 ? "income" : "expense");
 
           const categoryId = await ctx.runMutation(internal.categories.getOrCreate, {
             name: categoryName,
