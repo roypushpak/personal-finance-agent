@@ -38,7 +38,7 @@ export const createLinkToken = action({
         },
         client_name: "Personal Finance App",
         products: [Products.Transactions],
-        country_codes: [CountryCode.Ca],
+        country_codes: [CountryCode.Us],
         language: 'en',
       });
 
