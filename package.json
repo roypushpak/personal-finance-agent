@@ -20,6 +20,7 @@
     "convex": "^1.24.8",
     "langchain": "^0.3.27",
     "lucide-react": "^0.514.0",
+    "openai": "^4.96.0",
     "plaid": "^35.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
