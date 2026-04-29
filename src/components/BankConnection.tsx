@@ -38,12 +38,15 @@ export function BankConnection() {
       toast.error("Failed to link bank account. Please try again.");
     } finally {
       setIsConnecting(false);
+      setLinkToken(null);
     }
-  }, [exchangePublicToken, accounts]);
+  }, [exchangePublicToken]);
 
   const { open, ready } = usePlaidLink({
     token: linkToken,
-    onSuccess: handleSuccess,
+    onSuccess: (publicToken) => {
+      void handleSuccess(publicToken);
+    },
     onExit: () => {
       setIsConnecting(false);
     },
@@ -89,7 +92,9 @@ export function BankConnection() {
 
       <div className="mt-6 flex gap-4">
         <button
-          onClick={handleConnect}
+          onClick={() => {
+            void handleConnect();
+          }}
           disabled={isConnecting}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-400 disabled:cursor-not-allowed flex items-center"
         >
@@ -103,7 +108,9 @@ export function BankConnection() {
           )}
         </button>
         <button
-          onClick={handleMigrate}
+          onClick={() => {
+            void handleMigrate();
+          }}
           disabled={isMigrating}
           className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400"
         >

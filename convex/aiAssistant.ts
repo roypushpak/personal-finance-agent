@@ -3,19 +3,8 @@
 import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { api, internal } from "./_generated/api";
-import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { api } from "./_generated/api";
 import { OpenAI } from "openai";
-
-const llm = new ChatOpenAI({
-  modelName: "deepseek/deepseek-chat-v3-0324:free",
-  openAIApiKey: process.env.OPENROUTER_API_KEY,
-  configuration: {
-    baseURL: "https://openrouter.ai/api/v1",
-  },
-  temperature: 0.1,
-});
 
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -47,16 +36,6 @@ export const askFinancialQuestion = action({
         ctx.runQuery(api.plaidData.getPlaidTransactions, { limit: 50 }),
       ]);
 
-      // Create context for the AI
-      const financialContext = {
-        monthlyStats,
-        transactions: transactions.slice(0, 20), // Limit for token efficiency
-        budgets,
-        goals,
-        plaidTransactions: plaidTransactions.slice(0, 20),
-        currentDate: currentDate.toISOString().split('T')[0],
-      };
-
       const systemPrompt = `You are a professional personal-finance advisor. Using the data supplied, craft concise, actionable answers in a clear business tone (no emojis, no markdown code fences).  
 • Focus on insights, recommendations, and explanations grounded in the numbers.  
 • When showing money, format as USD currency (e.g. $1,234.56).  
@@ -69,16 +48,14 @@ Income: $${monthlyStats.totalIncome}
 Expenses: $${monthlyStats.totalExpenses}  
 Net Income: $${monthlyStats.netIncome}  
 Transactions: ${transactions.length}  
+Linked Bank Transactions: ${plaidTransactions.length}  
 Budgets: ${budgets.length}  
 Goals: ${goals.length}`;
 
-      const messages = [
-        new SystemMessage(systemPrompt),
-        new HumanMessage(args.question),
-      ];
+      const messages = createAdvisorMessages(systemPrompt, args.question);
 
-      const response = await llm.invoke(messages);
-      return cleanResponse(response.content as string);
+      const response = await generateAdvisorResponse(messages, 0.1);
+      return cleanResponse(response);
     } catch (error) {
       console.error('Error in AI assistant:', error);
       return "I'm sorry, I encountered an error while processing your question. Please try again later.";
@@ -114,13 +91,13 @@ Transactions: ${monthlyStats.transactionCount}
 Budgets: ${budgets.length}  
 Goals: ${goals.length}`;
 
-      const messages = [
-        new SystemMessage(systemPrompt),
-        new HumanMessage("Please generate a financial summary for this month."),
-      ];
+      const messages = createAdvisorMessages(
+        systemPrompt,
+        "Please generate a financial summary for this month.",
+      );
 
-      const response = await llm.invoke(messages);
-      return cleanResponse(response.content as string);
+      const response = await generateAdvisorResponse(messages, 0.1);
+      return cleanResponse(response);
     } catch (error) {
       console.error('Error generating summary:', error);
       return "Unable to generate financial summary at this time.";
@@ -244,7 +221,34 @@ function cleanResponse(text: string): string {
   return text
     .replace(/^```[\s\S]*?```/g, "") // remove fenced blocks
     .split("\n")
-    .map((line) => line.replace(/^\s*([*•\-\/]{1,2}\s*)/, "").trimEnd())
+    .map((line) => line.replace(/^\s*([*•\-/]{1,2}\s*)/, "").trimEnd())
     .join("\n")
     .trim();
+}
+
+async function generateAdvisorResponse(
+  messages: Array<{ role: "system" | "user"; content: string }>,
+  temperature = 0.1,
+): Promise<string> {
+  const response = await openai.chat.completions.create({
+    model: "google/gemini-flash-1.5",
+    temperature,
+    messages,
+  });
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error("No content in AI response");
+  }
+
+  return typeof content === "string"
+    ? content
+    : content.map((part) => ("text" in part ? part.text : "")).join("\n");
+}
+
+function createAdvisorMessages(systemPrompt: string, userPrompt: string) {
+  return [
+    { role: "system" as const, content: systemPrompt },
+    { role: "user" as const, content: userPrompt },
+  ];
 }
